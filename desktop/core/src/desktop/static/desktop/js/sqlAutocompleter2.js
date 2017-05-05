@@ -116,7 +116,11 @@ var SqlAutocompleter2 = (function () {
       if (foundVarRef.length > 0) {
         colRefCallback({ type: 'T' });
       } else {
-        self.fetchFieldsForIdentifiers(database, parseResult.colRef.identifierChain, colRefCallback, colRefDeferral.resolve);
+        try {
+          self.fetchFieldsForIdentifiers(database, parseResult.colRef.identifierChain, colRefCallback, colRefDeferral.resolve);
+        } catch(e) {
+          colRefCallback({ type: 'T' });
+        } // TODO: Ignore for subqueries
       }
     } else {
       colRefDeferral.resolve();
@@ -819,12 +823,16 @@ var SqlAutocompleter2 = (function () {
         self.snippet.getApiHelper().loadDatabases({
           sourceType: self.snippet.type(),
           successCallback: function (data) {
-            var foundDb = data.filter(function (db) {
-              return db.toLowerCase() === identifierChain[0].name.toLowerCase();
-            });
-            var databaseName = foundDb.length > 0 ? identifierChain.shift().name : defaultDatabase;
-            var tableName = identifierChain.shift().name;
-            fetchFieldsInternal(tableName, databaseName, identifierChain, callback, errorCallback, []);
+            try {
+              var foundDb = data.filter(function (db) {
+                return db.toLowerCase() === identifierChain[0].name.toLowerCase();
+              });
+              var databaseName = foundDb.length > 0 ? identifierChain.shift().name : defaultDatabase;
+              var tableName = identifierChain.shift().name;
+              fetchFieldsInternal(tableName, databaseName, identifierChain, callback, errorCallback, []);
+            } catch(e) {
+              callback([]);
+            } // TODO: Ignore for subqueries
           },
           silenceErrors: true,
           errorCallback: errorCallback
@@ -902,7 +910,25 @@ var SqlAutocompleter2 = (function () {
     var self = this;
     var addColumnsDeferred = $.Deferred();
 
-    if (typeof table.identifierChain !== 'undefined' && table.identifierChain.length === 1 && typeof table.identifierChain[0].subQuery !== 'undefined') {
+    if (typeof table.identifierChain !== 'undefined' && table.identifierChain.length === 1 && typeof table.identifierChain[0].cte !== 'undefined') {
+      if (typeof parseResult.commonTableExpressions !== 'undefined' && parseResult.commonTableExpressions.length > 0) {
+        parseResult.commonTableExpressions.every(function (cte) {
+          if (cte.alias === table.identifierChain[0].cte) {
+            cte.columns.forEach(function (column) {
+              var type = typeof column.type !== 'undefined' && column.type !== 'COLREF' ? column.type : 'T';
+              if (typeof column.alias !== 'undefined') {
+                columnSuggestions.push({value: self.backTickIfNeeded(column.alias), meta: type, weight: DEFAULT_WEIGHTS.COLUMN, table: table })
+              } else if (typeof column.identifierChain !== 'undefined' && column.identifierChain.length > 0 && typeof column.identifierChain[column.identifierChain.length - 1].name !== 'undefined') {
+                columnSuggestions.push({value: self.backTickIfNeeded(column.identifierChain[column.identifierChain.length - 1].name), meta: type, weight: DEFAULT_WEIGHTS.COLUMN, table: table })
+              }
+            });
+            return false;
+          }
+          return true;
+        })
+      }
+      addColumnsDeferred.resolve();
+    } else if (typeof table.identifierChain !== 'undefined' && table.identifierChain.length === 1 && typeof table.identifierChain[0].subQuery !== 'undefined') {
       var foundSubQuery = self.locateSubQuery(parseResult.subQueries, table.identifierChain[0].subQuery);
 
       var addSubQueryColumns = function (subQueryColumns) {
@@ -991,7 +1017,11 @@ var SqlAutocompleter2 = (function () {
         addColumnsDeferred.resolve();
       };
 
-      self.fetchFieldsForIdentifiers(database, table.identifierChain, callback, addColumnsDeferred.resolve);
+      try {
+        self.fetchFieldsForIdentifiers(database, table.identifierChain, callback, addColumnsDeferred.resolve);
+      } catch(e) {
+        addColumnsDeferred.resolve();
+      } // TODO: Ignore for subqueries
     }
     return addColumnsDeferred;
   };
@@ -1110,10 +1140,10 @@ var SqlAutocompleter2 = (function () {
     ADD: true, AGGREGATE: true, ALL: true, ALTER: true, AND: true, API_VERSION: true, AS: true, ASC: true, AVRO: true, BETWEEN: true, BIGINT: true, BINARY: true, BOOLEAN: true, BY: true, CACHED: true, CASE: true, CAST: true, CHANGE: true, CHAR: true, CLASS: true, CLOSE_FN: true,
     COLUMN: true, COLUMNS: true, COMMENT: true, COMPUTE: true, CREATE: true, CROSS: true, DATA: true, DATABASE: true, DATABASES: true, DATE: true, DATETIME: true, DECIMAL: true, DELIMITED: true, DESC: true, DESCRIBE: true, DISTINCT: true, DIV: true, DOUBLE: true, DROP: true, ELSE: true, END: true,
     ESCAPED: true, EXISTS: true, EXPLAIN: true, EXTERNAL: true, FALSE: true, FIELDS: true, FILEFORMAT: true, FINALIZE_FN: true, FIRST: true, FLOAT: true, FORMAT: true, FORMATTED: true, FROM: true, FULL: true, FUNCTION: true, FUNCTIONS: true, GROUP: true, HAVING: true, IF: true, IN: true, INCREMENTAL: true,
-    INIT_FN: true, INNER: true, INPATH: true, INSERT: true, INT: true, INTEGER: true, INTERMEDIATE: true, INTERVAL: true, INTO: true, INVALIDATE: true, IS: true, JOIN: true, LAST: true, LEFT: true, LIKE: true, LIMIT: true, LINES: true, LOAD: true, LOCATION: true, MERGE_FN: true, METADATA: true,
-    NOT: true, NULL: true, NULLS: true, OFFSET: true, ON: true, OR: true, ORDER: true, OUTER: true, OVERWRITE: true, PARQUET: true, PARQUETFILE: true, PARTITION: true, PARTITIONED: true, PARTITIONS: true, PREPARE_FN: true, PRODUCED: true, RCFILE: true, REAL: true, REFRESH: true, REGEXP: true, RENAME: true,
+    INIT_FN: true, INNER: true, INPATH: true, INSERT: true, INT: true, INTEGER: true, INTERMEDIATE: true, INTERVAL: true, INTO: true, INVALIDATE: true, IS: true, JOIN: true, KEY: true, KUDU: true, LAST: true, LEFT: true, LIKE: true, LIMIT: true, LINES: true, LOAD: true, LOCATION: true, MERGE_FN: true, METADATA: true,
+    NOT: true, NULL: true, NULLS: true, OFFSET: true, ON: true, OR: true, ORDER: true, OUTER: true, OVERWRITE: true, PARQUET: true, PARQUETFILE: true, PARTITION: true, PARTITIONED: true, PARTITIONS: true, PREPARE_FN: true, PRIMARY: true, PRODUCED: true, RCFILE: true, REAL: true, REFRESH: true, REGEXP: true, RENAME: true,
     REPLACE: true, RETURNS: true, RIGHT: true, RLIKE: true, ROW: true, SCHEMA: true, SCHEMAS: true, SELECT: true, SEMI: true, SEQUENCEFILE: true, SERDEPROPERTIES: true, SERIALIZE_FN: true, SET: true, SHOW: true, SMALLINT: true, STATS: true, STORED: true, STRAIGHT_JOIN: true, STRING: true, SYMBOL: true, TABLE: true,
-    TABLES: true, TBLPROPERTIES: true, TERMINATED: true, TEXTFILE: true, THEN: true, TIMESTAMP: true, TINYINT: true, TO: true, TRUE: true, UNCACHED: true, UNION: true, UPDATE_FN: true, USE: true, USING: true, VALUES: true, VIEW: true, WHEN: true, WHERE: true, WITH: true,
+    TABLES: true, TBLPROPERTIES: true, TERMINATED: true, TEXTFILE: true, THEN: true, TIMESTAMP: true, TINYINT: true, TO: true, TRUE: true, UNCACHED: true, UNION: true, UPDATE_FN: true, USE: true, USING: true, VALUES: true, VIEW: true, WHEN: true, WHERE: true, WITH: true
   };
 
   SqlAutocompleter2.prototype.backTickIfNeeded = function (text) {

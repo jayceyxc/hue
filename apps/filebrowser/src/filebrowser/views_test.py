@@ -687,6 +687,24 @@ class TestFileBrowserWithHadoop(object):
     assert_true('SR3_ndw_otlt_cmf_xref_INA' in response.context['view']['contents'], response.context['view']['contents'])
 
 
+  def test_view_bz2(self):
+    prefix = self.cluster.fs_prefix + '/test_view_bz2'
+    self.cluster.fs.mkdir(prefix)
+
+    # Bz2 file encoded as hex.
+    test_data = "425a6839314159265359338bcfac000001018002000c00200021981984185dc914e14240ce2f3eb0"
+
+    f = self.cluster.fs.open(prefix + '/test-view.bz2', "w")
+    f.write(test_data.decode('hex'))
+
+    # autodetect
+    response = self.c.get('/filebrowser/view=%s/test-view.bz2?compression=bz2' % prefix)
+    assert_true('test' in response.context['view']['contents'])
+
+    response = self.c.get('/filebrowser/view=%s/test-view.bz2' % prefix)
+    assert_true('test' in response.context['view']['contents'])
+
+
   def test_view_gz(self):
     prefix = self.cluster.fs_prefix + '/test_view_gz'
     self.cluster.fs.mkdir(prefix)
@@ -903,8 +921,8 @@ alert("XSS")
 
     USER_NAME = 'test'
     HDFS_DEST_DIR = prefix + "/tmp/fb-upload-test"
-    ZIP_FILE = os.path.realpath('apps/filebrowser/src/filebrowser/test_data/test.zip')
-    HDFS_ZIP_FILE = HDFS_DEST_DIR + '/test.zip'
+    ZIP_FILE = os.path.realpath('apps/filebrowser/src/filebrowser/test_data/te st.zip')
+    HDFS_ZIP_FILE = HDFS_DEST_DIR + '/te st.zip'
     try:
       self.cluster.fs.mkdir(HDFS_DEST_DIR)
       self.cluster.fs.chown(HDFS_DEST_DIR, USER_NAME)
@@ -918,12 +936,37 @@ alert("XSS")
       assert_true(self.cluster.fs.exists(HDFS_ZIP_FILE))
 
       resp = self.c.post('/filebrowser/extract_archive',
-                         dict(upload_path=HDFS_DEST_DIR, archive_name='test.zip'))
+                         dict(upload_path=HDFS_DEST_DIR, archive_name='te st.zip'))
+      response = json.loads(resp.content)
+      assert_equal(0, response['status'], response)
+      assert_true('handle' in response and response['handle']['id'], response)
+
+    finally:
+      cleanup_file(self.cluster, HDFS_ZIP_FILE)
+
+  def test_compress_hdfs_files(self):
+    ENABLE_EXTRACT_UPLOADED_ARCHIVE.set_for_testing(True)
+    prefix = self.cluster.fs_prefix + '/test_compress_files'
+    self.cluster.fs.mkdir(prefix)
+
+    test_dir1 = prefix + '/test_dir1'
+    self.cluster.fs.mkdir(test_dir1)
+    self.cluster.fs.chown(test_dir1, 'test')
+    self.cluster.fs.chmod(test_dir1, 0700)
+
+    test_dir2 = prefix + '/test_dir2'
+    self.cluster.fs.mkdir(test_dir2)
+    self.cluster.fs.chown(test_dir2, 'test')
+    self.cluster.fs.chmod(test_dir2, 0700)
+
+    try:
+      resp = self.c.post('/filebrowser/compress_files', {'upload_path': prefix, 'files[]': ['test_dir1','test_dir2'], 'archive_name': 'test_compress.zip'})
       response = json.loads(resp.content)
       assert_equal(0, response['status'], response)
       assert_true('handle' in response and response['handle']['id'], response)
     finally:
-      cleanup_file(self.cluster, HDFS_ZIP_FILE)
+      ENABLE_EXTRACT_UPLOADED_ARCHIVE.set_for_testing(False)
+      cleanup_tree(self.cluster, prefix)
 
   def test_upload_zip(self):
     prefix = self.cluster.fs_prefix + '/test_upload_zip'

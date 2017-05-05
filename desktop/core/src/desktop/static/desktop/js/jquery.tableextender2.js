@@ -28,6 +28,7 @@
     classToRemove: 'resultTable',
     hintElement: null,
     mainScrollable: window,
+    app: null,
     stickToTopPosition: -1,
     labels: {
       GO_TO_COLUMN: "Go to column:",
@@ -53,7 +54,6 @@
     self.drawFirstColumn(); // Sets self.firstColumnInner, self.firstColumnTopCell and self.firstColumn
     self.drawLockedRows();
 
-    var isFirefox = navigator.userAgent.toLowerCase().indexOf("firefox") > 0;
     var manyColumns = self.thMapping.length > 20;
 
     var sortAdjustment = self.options.noSort ? 10 : 20; // 20 is the sorting css width
@@ -83,7 +83,7 @@
     var scrollTimeout = -1;
     var headerScroll = function () {
       self.headerRowContainer.scrollLeft(self.$parent.scrollLeft());
-      if (isFirefox || manyColumns) {
+      if (manyColumns) {
         window.clearTimeout(scrollTimeout);
         scrollTimeout = window.setTimeout(throttledHeaderPadding, 200);
       } else {
@@ -154,7 +154,7 @@
       }
     };
     adjustSizes();
-    var sizeInterval = window.setInterval(adjustSizes, 300);
+    var sizeInterval = window.setInterval(adjustSizes, 300, self.options.app);
     self.disposeFunctions.push(function () {
       window.clearInterval(sizeInterval);
     });
@@ -170,17 +170,11 @@
     };
 
     var overHandler = function () {
-      self.$parent.find('.fixed-first-column table tbody tr:eq(' + $(this).index() + ') td').css({
-        'border-left': '2px solid #CCC',
-        'background-color': '#EEE'
-      });
+      self.$parent.find('.fixed-first-column table tbody tr:eq(' + $(this).index() + ') td').addClass('fixed-first-col-hover');
     };
 
     var outHandler = function () {
-      self.$parent.find('.fixed-first-column table tbody tr td').css({
-        'border-left': '2px solid #FFF',
-        'background-color': '#F9F9F9'
-      });
+      self.$parent.find('.fixed-first-column table tbody tr td').removeClass('fixed-first-col-hover');
     };
 
     self.$parent.children('table').on('click dblclick', 'tbody tr', clickHandler);
@@ -203,17 +197,7 @@
 
     if (!self.options.disableTopPosition) {
       self.repositionHeader();
-      var scrollFunction;
-      if (isFirefox) {
-        var ffThrottle = -1;
-        var throttledPositionClones = function () {
-          window.clearTimeout(ffThrottle);
-          ffThrottle = window.setTimeout(self.repositionHeader.bind(self), 10);
-        };
-        scrollFunction = throttledPositionClones;
-      } else {
-        scrollFunction = self.repositionHeader.bind(self);
-      }
+      var scrollFunction = self.repositionHeader.bind(self);
       self.$mainScrollable.on('scroll', scrollFunction);
       self.disposeFunctions.push(function () {
         self.$mainScrollable.off('scroll', scrollFunction);
@@ -359,7 +343,7 @@
     self.$mainScrollable.trigger('scroll');
   };
 
-  Plugin.prototype.drawFirstColumn = function () {
+  Plugin.prototype.drawFirstColumn = function (repositionHeader) {
     var self = this;
     if (!self.options.fixedFirstColumn) {
       self.firstColumnInner = $();
@@ -383,10 +367,10 @@
     var clonedCell = $('<table>').attr('class', self.$element.attr('class'));
     clonedCell.removeClass(self.options.classToRemove);
     clonedCell.css("margin-bottom", "0").css("table-layout", "fixed");
-    var clonedCellTHead = $('<thead>');
+    var clonedCellTHead = $('<thead><tr></tr></thead>');
     clonedCellTHead.appendTo(clonedCell);
     var clonedCellTH = originalTh.clone();
-    clonedCellTH.appendTo(clonedCellTHead);
+    clonedCellTH.appendTo(clonedCellTHead.find('tr'));
     clonedCellTH.width(originalTh.width()).css({
       "background-color": "#FFFFFF",
       "border-color": "transparent"
@@ -406,10 +390,10 @@
     clonedCellContainer.appendTo(firstColumnTopCell);
 
     $("#" + self.$element.attr("id") + "jHueTableExtenderClonedContainerColumn").remove();
-    var clonedTable = $('<table>').attr('class', self.$element.attr('class')).html('<thead></thead><tbody></tbody>');
+    var clonedTable = $('<table>').attr('class', self.$element.attr('class')).html('<thead><tr></tr></thead><tbody></tbody>');
     clonedTable.removeClass(self.options.classToRemove);
     clonedTable.css("margin-bottom", "0").css("table-layout", "fixed");
-    self.$element.find("thead>tr th:eq(0)").clone().appendTo(clonedTable.find('thead'));
+    self.$element.find("thead>tr th:eq(0)").clone().appendTo(clonedTable.find('thead tr'));
     var clonedTBody = clonedTable.find('tbody');
     var clones = self.$element.find("tbody>tr td:nth-child(1)").clone();
     var h = '';
@@ -418,7 +402,7 @@
       if ($(this).html() === '') {
         foundEmptyTh = true;
       }
-      h+= '<tr><td style="border-left: 2px solid #FFF">' + $(this).html() +'</td></tr>';
+      h+= '<tr><td>' + $(this).html() +'</td></tr>';
     });
     if (foundEmptyTh) {
       // In IE it's sometimes empty so we'll redraw in a bit
@@ -430,12 +414,15 @@
     }
     clonedTBody.html(h);
     if (self.options.lockSelectedRow) {
-      clonedTBody.find('td').each(function(){
+      clonedTBody.find('td').each(function(idx){
         var cell = $(this);
-        cell.attr('title', self.options.labels.LOCK).addClass('lockable pointer').on('click', function(){
-          self.drawLockedRow($(this).text()*1);
+        cell.attr('title', self.options.labels.LOCK).addClass('lockable');
+        $('<i>').addClass('fa fa-lock pointer muted').prependTo(cell).on('click', function(){
+          self.drawLockedRow($(this).parent().text()*1);
         });
-        $('<i>').addClass('fa fa-lock muted').prependTo(cell);
+        $('<i>').addClass('fa fa-expand pointer muted').prependTo(cell).on('click', function(){
+          huePubSub.publish('table.row.dblclick', {idx: idx, table: self.$element});
+        });
       });
     }
     clonedTable.find("thead>tr th:eq(0)").width(originalTh.width()).css("background-color", "#FFFFFF");
@@ -454,6 +441,10 @@
     self.firstColumnInner = firstColumnInner;
     self.firstColumnTopCell = firstColumnTopCell;
     self.firstColumn = firstColumn;
+
+    if (repositionHeader) {
+      self.repositionHeader();
+    }
   };
 
   Plugin.prototype.drawLockedRows = function (force) {

@@ -79,9 +79,9 @@ from django.utils.translation import ugettext as _
                 <div class="control-group" data-bind="visible: coordinator.properties.cron_advanced">
                   <label class="control-label">${ _('Crontab') }</label>
                   <div class="controls">
-                    <input id="coord-frequency" type="text" data-bind="value: coordinator.properties.cron_frequency, enable: $root.isEditing, attachViewModelToElementData" name="cron_frequency"/>
+                    <input id="coord-frequency" type="text" data-bind="textInput: coordinator.properties.cron_frequency, enable: $root.isEditing, attachViewModelToElementData, tagsNotAllowed" name="cron_frequency"/>
                     <span class="help-inline">
-                      <a data-bind="visible: coordinator.properties.cron_advanced" href="http://quartz-scheduler.org/api/2.2.0/org/quartz/CronExpression.html" target="_blank">
+                      <a data-bind="visible: coordinator.properties.cron_advanced" href="http://www.quartz-scheduler.org/documentation/quartz-2.x/tutorials/crontrigger.html" target="_blank">
                       <i class="fa fa-question-circle" title="${ _('Check syntax ?') }"></i></a>
                     </span>
                   </div>
@@ -389,9 +389,9 @@ from django.utils.translation import ugettext as _
 
 <div id="chooseWorkflowDemiModal" class="${ is_embeddable and 'modal' or 'demi-modal' } fade" data-backdrop="false">
   %if is_embeddable:
-  <div class="modal-header" style="padding-bottom: 2px">
-    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
-    <h3>${ _('Choose a workflow') }</h3>
+  <div class="modal-header">
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 id="myModalLabel" class="modal-title">${_('Choose a workflow')}</h2>
   </div>
   %endif
   <div class="modal-body">
@@ -424,9 +424,9 @@ from django.utils.translation import ugettext as _
 </div>
 
 <div id="settingsModal" class="modal hide fade">
-  <div class="modal-header" style="padding-bottom: 2px">
-    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
-    <h3 id="myModalLabel">${ _('Coordinator Settings') }</h3>
+  <div class="modal-header">
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 id="myModalLabel" class="modal-title">${_('Coordinator Settings')}</h2>
   </div>
   <div class="modal-body">
       <h4>${ _('Submission Parameters') }</h4>

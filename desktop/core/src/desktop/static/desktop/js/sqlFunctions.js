@@ -859,7 +859,7 @@ var SqlFunctions = (function () {
       },
       avg: {
         returnTypes: ['DOUBLE'],
-        arguments: [[{type: 'T'}]],
+        arguments: [[{type: 'NUMBER'}]],
         signature: 'avg([DISTINCT|ALL] col)',
         description: 'An aggregate function that returns the average value from a set of numbers. Its single argument can be numeric column, or the numeric result of a function or expression applied to the column value. Rows with a NULL value for the specified column are ignored. If the table is empty, or all the values supplied to AVG are NULL, AVG returns NULL.'
       },
@@ -1028,7 +1028,7 @@ var SqlFunctions = (function () {
       current_timestamp: {
         returnTypes: ['TIMESTAMP'],
         arguments: [],
-        signature: 'current_timestamp',
+        signature: 'current_timestamp()',
         description: 'Returns the current timestamp at the start of query evaluation (as of Hive 1.2.0). All calls of current_timestamp within the same query return the same value.'
       },
       datediff: {
@@ -1403,7 +1403,7 @@ var SqlFunctions = (function () {
         returnTypes: ['TIMESTAMP'],
         arguments: [[{type: 'TIMESTAMP'}], [{type: 'STRING'}]],
         signature: 'trunc(TIMESTAMP date, STRING unit)',
-        description: 'Strips off fields and optionally rounds a TIMESTAMP value.'
+        description: 'Strips off fields and optionally rounds a TIMESTAMP value. The unit argument value is case-sensitive. This argument string can be one of: SYYYY, YYYY, YEAR, SYEAR, YYY, YY, Y: Year. Q: Quarter. MONTH, MON, MM, RM: Month. WW, W: Same day of the week as the first day of the month. DDD, DD, J: Day. DAY, DY, D: Starting day of the week. (Not necessarily the current day.) HH, HH12, HH24: Hour. A TIMESTAMP value truncated to the hour is always represented in 24-hour notation, even for the HH12 argument string. MI: Minute.'
       },
       unix_timestamp: {
         returnTypes: ['INT'],
@@ -2523,7 +2523,7 @@ var SqlFunctions = (function () {
     var functionsToSuggest = getFunctionsWithReturnTypes(dialect, returnTypes, includeAggregate, includeAnalytic);
     Object.keys(functionsToSuggest).forEach(function (name) {
       completions.push({
-        value: name === 'current_date' || name === 'current_timestamp' ? name : name + '()',
+        value: name + '()',
         meta: functionsToSuggest[name].returnTypes.join('|'),
         weight: returnTypes.filter(function (type) {
           return functionsToSuggest[name].returnTypes.filter(

@@ -32,6 +32,7 @@ from django.utils.translation import ugettext as _
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_POST
 
+from metadata.conf import has_navigator
 from metadata.navigator_api import search_entities as metadata_search_entities
 from metadata.navigator_api import search_entities_interactive as metadata_search_entities_interactive
 from notebook.connectors.base import Notebook
@@ -41,7 +42,8 @@ from desktop.lib.django_util import JsonResponse
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.export_csvxls import make_response
 from desktop.lib.i18n import smart_str, force_unicode
-from desktop.models import Document2, Document, Directory, FilesystemException, uuid_default
+from desktop.models import Document2, Document, Directory, FilesystemException, uuid_default, ClusterConfig,\
+  UserPreferences
 
 
 LOG = logging.getLogger(__name__)
@@ -62,6 +64,25 @@ def api_error_handler(func):
         return JsonResponse(response)
 
   return decorator
+
+
+@api_error_handler
+def get_config(request):
+  cluster_config = ClusterConfig(request.user)
+  app_config = cluster_config.get_apps()
+
+  return JsonResponse({
+    'status': 0,
+    'app_config': app_config,
+    'main_button_action': cluster_config.main_quick_action,
+    'button_actions': [
+      app for app in [
+        app_config.get('editor'),
+        app_config.get('dashboard'),
+        app_config.get('scheduler')
+      ] if app is not None
+    ],
+  })
 
 
 @api_error_handler
@@ -219,7 +240,7 @@ def _get_document_helper(request, uuid, with_data, with_dependencies, path):
 
   if with_dependencies:
     response['dependencies'] = [dependency.to_dict() for dependency in document.dependencies.all()]
-    response['dependents'] = [dependent.to_dict() for dependent in document.dependents.all()]
+    response['dependents'] = [dependent.to_dict() for dependent in document.dependents.exclude(is_history=True).all()]
 
   # Get children documents if this is a directory
   if document.is_directory:
@@ -348,6 +369,27 @@ def delete_document(request):
       'status': 0,
   })
 
+@api_error_handler
+@require_POST
+def restore_document(request):
+  """
+  Accepts a uuid
+
+  Restores the document to /home
+  """
+  uuids = json.loads(request.POST.get('uuids'))
+
+  if not uuids:
+    raise PopupException(_('restore_document requires comma separated uuids'))
+
+  for uuid in uuids.split(','):
+    document = Document2.objects.get_by_uuid(user=request.user, uuid=uuid, perm_type='write')
+    document.restore()
+
+  return JsonResponse({
+      'status': 0,
+  })
+
 
 @api_error_handler
 @require_POST
@@ -357,11 +399,14 @@ def share_document(request):
 
   Example of input: {'read': {'user_ids': [1, 2, 3], 'group_ids': [1, 2, 3]}}
   """
-  perms_dict = json.loads(request.POST.get('data'))
-  uuid = json.loads(request.POST.get('uuid'))
+  perms_dict = request.POST.get('data')
+  uuid = request.POST.get('uuid')
 
   if not uuid or not perms_dict:
     raise PopupException(_('share_document requires uuid and perms_dict'))
+  else:
+    perms_dict = json.loads(perms_dict)
+    uuid = json.loads(uuid)
 
   doc = Document2.objects.get_by_uuid(user=request.user, uuid=uuid)
 
@@ -405,7 +450,11 @@ def export_documents(request):
   # Get PKs of documents to export
   doc_ids = [doc.pk for doc in export_doc_set]
   num_docs = len(doc_ids)
-  filename = 'hue-documents-%s-(%s)' % (datetime.today().strftime('%Y-%m-%d'), num_docs)
+
+  if len(selection) == 1:
+    filename = docs[0].name
+  else:
+    filename = 'hue-documents-%s-(%s)' % (datetime.today().strftime('%Y-%m-%d'), num_docs)
 
   f = StringIO.StringIO()
 
@@ -530,6 +579,38 @@ def _update_imported_oozie_document(doc, uuids_map):
 
   return doc
 
+
+def user_preferences(request, key=None):
+  response = {'status': 0, 'data': {}}
+
+  if request.method != "POST":
+    if key is not None:
+      try:
+        x = UserPreferences.objects.get(user=request.user, key=key)
+        response['data'] = {key: x.value}
+      except UserPreferences.DoesNotExist:
+        response['data'] = None
+    else:
+      response['data'] = dict((x.key, x.value) for x in UserPreferences.objects.filter(user=request.user))
+  else:
+    if "set" in request.POST:
+      try:
+        x = UserPreferences.objects.get(user=request.user, key=key)
+      except UserPreferences.DoesNotExist:
+        x = UserPreferences(user=request.user, key=key)
+      x.value = request.POST["set"]
+      x.save()
+      response['data'] = {key: x.value}
+    elif "delete" in request.POST:
+      try:
+        x = UserPreferences.objects.get(user=request.user, key=key)
+        x.delete()
+      except UserPreferences.DoesNotExist:
+        pass
+
+  return JsonResponse(response)
+
+
 def search_entities(request):
   sources = json.loads(request.POST.get('sources')) or []
 
@@ -544,7 +625,10 @@ def search_entities(request):
 
     return JsonResponse(response)
   else:
-    return metadata_search_entities(request)
+    if has_navigator(request.user):
+      return metadata_search_entities(request)
+    else:
+      return JsonResponse({'status': 1, 'message': _('Navigator not enabled')})
 
 
 def search_entities_interactive(request):
@@ -562,7 +646,10 @@ def search_entities_interactive(request):
 
     return JsonResponse(response)
   else:
-    return metadata_search_entities_interactive(request)
+    if has_navigator(request.user):
+      return metadata_search_entities_interactive(request)
+    else:
+      return JsonResponse({'status': 1, 'message': _('Navigator not enabled')})
 
 
 def _is_import_valid(documents):
@@ -678,11 +765,20 @@ def _create_or_update_document_with_owner(doc, owner, uuids_map):
       doc['fields']['parent_directory'] = [home_dir.uuid, home_dir.version, home_dir.is_history]
 
   # Verify that dependencies exist, raise critical error if any dependency not found
+  # Ignore history dependencies
   if doc['fields']['dependencies']:
-    for uuid, version, is_history in doc['fields']['dependencies']:
-      if not uuid in uuids_map.keys() and \
-              not Document2.objects.filter(uuid=uuid, version=version, is_history=is_history).exists():
-        raise PopupException(_('Cannot import document, dependency with UUID: %s not found.') % uuid)
+    history_deps_list = []
+    for index, (uuid, version, is_history) in enumerate(doc['fields']['dependencies']):
+      if not uuid in uuids_map.keys() and not is_history and \
+              not Document2.objects.filter(uuid=uuid, version=version).exists():
+          raise PopupException(_('Cannot import document, dependency with UUID: %s not found.') % uuid)
+      elif is_history:
+        history_deps_list.insert(0, index) # Insert in decreasing order to facilitate delete
+        LOG.warn('History dependency with UUID: %s ignored while importing document %s' % (uuid, doc['fields']['name']))
+
+    # Delete history dependencies not found in the DB
+    for index in history_deps_list:
+      del doc['fields']['dependencies'][index]
 
   return doc
 

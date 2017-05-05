@@ -21,10 +21,12 @@ from django.utils.encoding import smart_unicode
 from django.utils.translation import ugettext as _
 %>
 
-<%namespace name="header" file="header.mako" />
+<%namespace name="layout" file="/about_layout.mako" />
 
+%if not is_embeddable:
 ${ commonheader(_('Quick Start'), "quickstart", user, request) | n,unicode }
-${ header.menubar() }
+%endif
+${ layout.menubar(section='quick_start') }
 
 <div class="container-fluid">
   <div class="row-fluid" style="margin-bottom: 100px;">
@@ -58,8 +60,7 @@ ${ header.menubar() }
               <div class="card-body">
                 <div id="check-config-section" style="margin-bottom:20px">
                   <div class="spinner">
-                    <!--[if !IE]> --><i class="fa fa-spinner fa-spin" style="font-size: 60px; color: #DDD"></i><!-- <![endif]-->
-                    <!--[if IE]><img src="${ static('desktop/art/spinner.gif') }" /><![endif]-->
+                    <i class="fa fa-spinner fa-spin" style="font-size: 60px; color: #DDD"></i>
                   </div>
                   <div class="info hide"></div>
                 </div>
@@ -149,20 +150,7 @@ ${ header.menubar() }
               <div class="card-body" style="margin-top: 10px">
                 <a href="${ url('useradmin.views.list_users') }" target="_blank" style="padding-left: 2px"><img
                     src="${ static('useradmin/art/icon_useradmin_48.png') }" class="app-icon"
-                    style="margin-right: 4px;"> ${ _('User Admin') }</a>
-              </div>
-            </div>
-
-            <div class="card card-home card-tab card-tab-bordertop card-listcontent margin-top-30">
-              <h2 class="card-heading simple">${ _('Tours and tutorials') }</h2>
-
-              <div class="card-body" style="margin-top: 10px">
-                <label class="checkbox">
-                  <input class="updatePreferences" type="checkbox" name="tours_and_tutorials"
-                         style="margin-right: 10px"
-                         title="${ _('Check to enable the tours and tutorials') }" ${ tours_and_tutorials and 'checked' or '' }/>
-                  ${ _('Display the "Available Tours" question mark when tours are available for a specific page.') }
-                </label>
+                    style="margin-right: 4px;" alt="${ _('User Admin') }"> ${ _('User Admin') }</a>
               </div>
             </div>
 
@@ -188,7 +176,7 @@ ${ header.menubar() }
               <h2 class="card-heading simple">${ _('Use the applications') }</h2>
 
               <div class="card-body">
-                <a href="${ url('desktop.views.home2') }" style="padding-left: 2px; line-height: 24px; margin-right: 4px"><i class="fa fa-home" style="font-size: 24px; color: #338bb8; vertical-align: middle;"></i> ${ _('Hue Home') }</a>
+                <a href="${ url('desktop.views.home2') }" style="padding-left: 2px; line-height: 24px; margin-right: 4px"><i class="fa fa-home" style="font-size: 24px; color: #0B7FAD; vertical-align: middle;"></i> ${ _('Hue Home') }</a>
               </div>
             </div>
 
@@ -266,9 +254,13 @@ ${ header.menubar() }
 
 </style>
 
-<script src="${ static('desktop/ext/js/routie-0.3.0.min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/js/hue.routie.js') }" type="text/javascript" charset="utf-8"></script>
+<script>
+  routie.setPathname('/about');
+</script>
 
-<script type="text/javascript" charset="utf-8">
+
+<script type="text/javascript">
 
 $(document).ready(function(){
 
@@ -393,11 +385,16 @@ $(document).ready(function(){
   $("#updateSkipWizard").prop('checked', $.cookie("hueLandingPage", {path: "/"}) == "home");
 
   $("#updateSkipWizard").change(function () {
-    $.cookie("hueLandingPage", this.checked ? "home" : "wizard", {path: "/"});
+    $.cookie("hueLandingPage", this.checked ? "home" : "wizard", {
+      path: "/",
+      secure: window.location.protocol.indexOf('https') > -1
+    });
   });
 
 });
 </script>
 % endif
 
+%if not is_embeddable:
 ${ commonfooter(request, messages) | n,unicode }
+%endif

@@ -210,15 +210,31 @@ var HueFileEntry = (function () {
     });
   }
 
+  HueFileEntry.prototype.getDirectory = function () {
+    var self = this;
+
+    if (! self.definition() || self.isRoot()) {
+      return null;
+    }
+    else {
+      return self.definition().uuid;
+    }
+  };
+
   HueFileEntry.prototype.addDirectoryParamToUrl = function (url) {
     var self = this;
-    if (! self.definition() || self.isRoot()) {
+
+    var directoryId = self.getDirectory();
+
+    if (! directoryId) {
       return url;
     }
-    if (url.indexOf('?') !== -1) {
+    else if (url.indexOf('?') !== -1) {
       return url + '&directory_uuid=' + self.definition().uuid;
     }
-    return url + '?directory_uuid=' + self.definition().uuid;
+    else {
+      return url + '?directory_uuid=' + self.definition().uuid;
+    }
   };
 
   HueFileEntry.prototype.beforeContextOpen = function () {
@@ -408,13 +424,16 @@ var HueFileEntry = (function () {
       if (!self.loaded()) {
         self.load();
       }
-    }
-    else {
-      if (e && ((e.which || e.button) !== 1 || (e.ctrlKey || e.shiftKey || e.metaKey))) {
-        window.open(self.definition().absoluteUrl);
-      }
-      else {
-        window.location.href = self.definition().absoluteUrl;
+    } else {
+      if (IS_HUE_4) {
+        huePubSub.publish('open.link', self.definition().absoluteUrl);
+      } else {
+        if (e && ((e.which || e.button) !== 1 || (e.ctrlKey || e.shiftKey || e.metaKey))) {
+          window.open(self.definition().absoluteUrl);
+        }
+        else {
+          window.location.href = self.definition().absoluteUrl;
+        }
       }
     }
   };
@@ -508,9 +527,16 @@ var HueFileEntry = (function () {
     location.href = $(event.target).attr('href');
   };
 
-  HueFileEntry.prototype.openResponsiveLink = function (entry, event) {
+  HueFileEntry.prototype.openHue4Link = function (entry, event) {
     event.preventDefault();
     huePubSub.publish('open.link', $(event.target).attr('href'));
+  };
+
+  HueFileEntry.prototype.showRestoreConfirmation = function () {
+    var self = this;
+    if (self.selectedEntries().length > 0 && (self.superuser || !self.sharedWithMeSelected())) {
+      $('#restoreFromTrashModal').modal('show');
+    }
   };
 
   HueFileEntry.prototype.showDeleteConfirmation = function () {
@@ -649,6 +675,33 @@ var HueFileEntry = (function () {
         self.downloadThis();
       }
     };
+  };
+
+  HueFileEntry.prototype.restoreFromTrash = function () {
+    var self = this;
+    if (self.app === 'documents') {
+      if (self.selectedEntries().indexOf(self) !== -1) {
+        self.activeEntry(self.parent);
+      }
+
+      if (self.selectedEntries().length > 0) {
+        var uuids = self.selectedEntries().map(function(entry) {
+          return entry.definition().uuid;
+        }).join(',');
+        self.apiHelper.restoreDocument({
+          uuids: uuids,
+          successCallback: function () {
+            self.activeEntry().load();
+          },
+          errorCallback: function () {
+            self.activeEntry().load();
+          }
+        });
+      } else {
+        self.activeEntry().load();
+      }
+      $('#restoreFromTrashModal').modal('hide');
+    }
   };
 
   HueFileEntry.prototype.createDirectory = function (name) {

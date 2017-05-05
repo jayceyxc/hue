@@ -63,6 +63,7 @@
 
   function Plugin(element, options) {
     this.element = element;
+    $(element).data('jHueFileChooser', this);
     if (typeof jHueFileChooserGlobals != 'undefined') {
       var extendedDefaults = $.extend({}, defaults, jHueFileChooserGlobals);
       extendedDefaults.labels = $.extend({}, defaults.labels, jHueFileChooserGlobals.labels);
@@ -166,7 +167,7 @@
         $li.appendTo($ul);
       });
       $(self.element).find('.filechooser-services').empty().width(80);
-      $(self.element).find('.filechooser-tree').width(470).css('paddingLeft', '6px').css('borderLeft', '1px solid #EEE').css('marginLeft', '80px').css('min-height', '330px');
+      $(self.element).find('.filechooser-tree').width(480).css('paddingLeft', '6px').css('borderLeft', '1px solid #EEE').css('marginLeft', '80px').css('min-height', '330px');
       $ul.appendTo($(self.element).find('.filechooser-services'));
     }
   };
@@ -174,18 +175,22 @@
   Plugin.prototype.navigateTo = function (path) {
     var _parent = this;
     $(_parent.element).find('.filechooser-tree').html("<i style=\"font-size: 24px; color: #DDD\" class=\"fa fa-spinner fa-spin\"></i>");
-    $.getJSON("/filebrowser/view=" + path, function (data) {
+    var pageSize = '?pagesize=1000';
+    if (path.indexOf('?') > -1) {
+      pageSize = pageSize.replace(/\?/, '&');
+    }
+    $.getJSON("/filebrowser/view=" + path + pageSize, function (data) {
       $(_parent.element).find('.filechooser-tree').empty();
 
       path = data.current_dir_path; // use real path.
       var _flist = $("<ul>").addClass("unstyled").css({
-        'height': '270px',
+        'height': '260px',
         'overflow-y': 'auto'
       });
       if (data.title != null && data.title == "Error") {
         var _errorMsg = $("<div>").addClass("alert").addClass("alert-error").text(data.message);
         _errorMsg.appendTo($(_parent.element).find('.filechooser-tree'));
-        var _previousLink = $("<a>").addClass("btn").addClass("bnt-small").text(_parent.options.labels.BACK).click(function () {
+        var _previousLink = $("<a>").addClass("btn").text(_parent.options.labels.BACK).click(function () {
           _parent.options.onFolderChange(_parent.previousPath);
           _parent.navigateTo(_parent.previousPath);
         });
@@ -200,7 +205,7 @@
         _parent.previousPath = path;
         _parent.options.onNavigate(_parent.previousPath);
 
-        var $search = $('<div>').html('<i class="fa fa-search inactive-action pointer" style="position: absolute; top: 3px"></i><input type="text" class="small-search" style="display: none; width: 0; padding-left: 20px">').css({
+        var $search = $('<div>').html('<i class="fa fa-refresh inactive-action pointer" style="position: absolute; top: 3px; margin-left: -16px"></i> <i class="fa fa-search inactive-action pointer" style="position: absolute; top: 3px"></i><input type="text" class="small-search" style="display: none; width: 0; padding-left: 20px">').css({
           'position': 'absolute',
           'right': '20px',
           'background-color': '#FFF',
@@ -211,6 +216,7 @@
             'width': '0'
           }, 100, function(){
             $search.find('input').hide();
+            $search.find('.fa-refresh').show();
           });
         }
 
@@ -236,11 +242,12 @@
           }
         });
 
-        $search.find('i').on('click', function(){
+        $search.find('.fa-search').on('click', function(){
           if ($searchInput.is(':visible')){
             slideOutInput();
           }
           else {
+            $search.find('.fa-refresh').hide();
             $searchInput.show().animate({
               'width': '100px'
             }, 100, function(){
@@ -249,16 +256,20 @@
           }
         });
 
+        $search.find('.fa-refresh').on('click', function(){
+          _parent.navigateTo(path);
+        });
+
         $search.appendTo($(_parent.element).find('.filechooser-tree'));
 
-        var $homeBreadcrumb = $("<ul>").addClass("hueBreadcrumb").css({
+        var $homeBreadcrumb = $("<ul>").addClass("hue-breadcrumbs").css({
           'padding': '0',
           'marginLeft': '0',
           'float': 'left',
           'white-space': 'nowrap'
         });
 
-        var $scrollingBreadcrumbs = $("<ul>").addClass("hueBreadcrumb editable-breadcrumbs").css({
+        var $scrollingBreadcrumbs = $("<ul>").addClass("hue-breadcrumbs editable-breadcrumbs").css({
           'padding': '0',
           'marginLeft': '10px',
           'marginBottom': '0',
@@ -356,24 +367,14 @@
         $('<div>').addClass('clearfix').appendTo($(_parent.element).find('.filechooser-tree'));
 
         if (typeof $.nicescroll !== 'undefined') {
-          $scrollingBreadcrumbs.niceScroll({
-            cursorcolor: "#C1C1C1",
-            cursorborder: "1px solid #C1C1C1",
-            cursoropacitymin: 0,
-            cursoropacitymax: 1,
-            scrollspeed: 100,
-            mousescrollstep: 60,
-            railhoffset: {
-              top: 2
-            }
-          });
+          hueUtils.initNiceScroll($scrollingBreadcrumbs, {railhoffset: {top: 2}});
           $scrollingBreadcrumbs.parents('.modal').find('.nicescroll-rails-vr').remove();
         }
 
         var resizeBreadcrumbs = window.setInterval(function(){
           if ($homeBreadcrumb.is(':visible') && $homeBreadcrumb.width() > 0){
             window.clearInterval(resizeBreadcrumbs);
-            $scrollingBreadcrumbs.width($(_parent.element).find('.filechooser-tree').width() - $homeBreadcrumb.width() - 50);
+            $scrollingBreadcrumbs.width($(_parent.element).find('.filechooser-tree').width() - $homeBreadcrumb.width() - 65);
           }
         }, 100);
 
@@ -455,7 +456,7 @@
           initUploader(path, _parent, _uploadFileBtn, _parent.options.labels);
         }
         if (_parent.options.selectFolder) {
-          _selectFolderBtn = $("<a>").addClass("btn").addClass("small").text(_parent.options.labels.SELECT_FOLDER);
+          _selectFolderBtn = $("<a>").addClass("btn").text(_parent.options.labels.SELECT_FOLDER);
           if (_parent.options.uploadFile) {
             _selectFolderBtn.css("margin-top", "10px");
           }
@@ -467,7 +468,7 @@
         }
         $("<span> </span>").appendTo(_actions);
         if (_parent.options.createFolder) {
-          _createFolderBtn = $("<a>").addClass("btn").addClass("small").text(_parent.options.labels.CREATE_FOLDER);
+          _createFolderBtn = $("<a>").addClass("btn").text(_parent.options.labels.CREATE_FOLDER);
           if (_parent.options.uploadFile) {
             _createFolderBtn.css("margin-top", "10px");
           }

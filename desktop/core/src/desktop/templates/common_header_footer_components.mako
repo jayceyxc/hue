@@ -19,15 +19,48 @@ from django.template.defaultfilters import escape, escapejs
 
 from desktop import conf
 from desktop.lib.i18n import smart_unicode
+
+from beeswax.conf import LIST_PARTITIONS_LIMIT
+
 from metadata.conf import has_optimizer, OPTIMIZER
 %>
 
 <%def name="header_i18n_redirection(user, is_s3_enabled, apps)">
-  <script type="text/javascript" charset="utf-8">
+  <script type="text/javascript">
 
     var LOGGED_USERNAME = '${ user.username }';
     var IS_S3_ENABLED = '${ is_s3_enabled }' === 'True';
     var HAS_OPTIMIZER = '${ has_optimizer() }' === 'True';
+
+    var BOOTSTRAP_RATIOS = {
+      SPAN3: function () {
+        var _w = $(window).width();
+        if (_w >= 1200) {
+          return 23.07692308;
+        }
+        else if (_w >= 768 && _w <= 979) {
+          return 22.9281768;
+        }
+        else {
+          return 23.17073171;
+        }
+      },
+      SPAN9: function () {
+        var _w = $(window).width();
+        if (_w >= 1200) {
+          return 74.35897436;
+        }
+        else if (_w >= 768 && _w <= 979) {
+          return 74.30939227;
+        }
+        else {
+          return 74.3902439;
+        }
+      },
+      MARGIN: function () {
+        return 2.56410256;
+      }
+    };
 
     var CACHEABLE_TTL = {
       default: ${ conf.CUSTOM.CACHEABLE_TTL.get() },
@@ -68,15 +101,6 @@ from metadata.conf import has_optimizer, OPTIMIZER
       }
     };
 
-    jHueTourGlobals = {
-      labels: {
-        AVAILABLE_TOURS: "${_('Available tours')}",
-        NO_AVAILABLE_TOURS: "${_('None for this page.')}",
-        MORE_INFO: "${_('Read more about it...')}",
-        TOOLTIP_TITLE: "${_('Demo tutorials')}"
-      }
-    };
-
     LeafletGlobals = {
       layer: '${ leaflet['layer'] |n,unicode }',
       attribution: '${ leaflet['attribution'] |n,unicode }'
@@ -88,6 +112,24 @@ from metadata.conf import has_optimizer, OPTIMIZER
         errorLoadingTablePreview: '${ _('There was a problem loading the preview') }'
       },
       user: '${ user.username }'
+    };
+
+    DropzoneGlobals = {
+      homeDir: '${ user.get_home_directory() if not user.is_anonymous() else "" }',
+      i18n: {
+        cancelUpload: '${ _('Cancel upload') }',
+        uploadCanceled: '${ _('The upload has been canceled') }',
+        uploadSucceeded: '${ _('uploaded successfully') }',
+      }
+    };
+
+    MetastoreGlobals = {
+      partitionsLimit: ${ LIST_PARTITIONS_LIMIT.get() },
+      i18n: {
+        errorRefreshingTableStats: '${_('An error occurred refreshing the table stats. Please try again.')}',
+        errorLoadingDatabases: '${ _('There was a problem loading the databases. Please try again.') }',
+        errorLoadingTablePreview: '${ _('There was a problem loading the table preview. Please try again.') }'
+      },
     };
 
     AutocompleterGlobals = {
@@ -117,13 +159,20 @@ from metadata.conf import has_optimizer, OPTIMIZER
           keyword: '${ _('keyword') }',
           orderBy: '${ _('order by') }',
           table: '${ _('table') }',
-          value: '${ _('value') }',
+          sample: '${ _('sample') }',
           variable: '${ _('variable') }',
           view: '${ _('view') }',
           virtual: '${ _('virtual') }'
         }
       }
     };
+
+    QueryBuilderGlobals = {
+      i18n: {
+        INSERT_VALUE_HERE: "${ _('Insert value here') }",
+        QUERY_REQUIRE: "${ _('Query requires a select or aggregate.') }"
+      }
+    }
   </script>
 
   <!--[if lt IE 9]>
@@ -148,11 +197,15 @@ from metadata.conf import has_optimizer, OPTIMIZER
     if (document.documentMode && document.documentMode < 9){
       location.href = "${ url('desktop.views.unsupported') }";
     }
+
+    // sets a global variable to see if it's IE11 or not
+    var isIE11 = !!window.MSInputMethodContext && !!document.documentMode;
   </script>
 </%def>
 
 <%def name="header_pollers(user, is_s3_enabled, apps)">
   <script type="text/javascript">
+    Dropzone.autoDiscover = false;
     moment.locale(window.navigator.userLanguage || window.navigator.language);
     localeFormat = function (time) {
       var mTime = time;
@@ -169,7 +222,7 @@ from metadata.conf import has_optimizer, OPTIMIZER
         return mTime;
       }
       return mTime;
-    }
+    };
 
     //Add CSRF Token to all XHR Requests
     var xrhsend = XMLHttpRequest.prototype.send;
@@ -181,7 +234,7 @@ from metadata.conf import has_optimizer, OPTIMIZER
     %endif
 
       return xrhsend.apply(this, arguments);
-    }
+    };
 
     $.fn.dataTableExt.sErrMode = "throw";
 
@@ -239,7 +292,7 @@ from metadata.conf import has_optimizer, OPTIMIZER
         placement: "bottom"
       });
 
-      $("[rel='navigator-tooltip']").tooltip({
+      $("[data-rel='navigator-tooltip']").tooltip({
         delay: 0,
         placement: "bottom"
       });
@@ -247,9 +300,14 @@ from metadata.conf import has_optimizer, OPTIMIZER
       % if 'jobbrowser' in apps:
       var JB_CHECK_INTERVAL_IN_MILLIS = 30000;
       var checkJobBrowserStatusIdx = window.setTimeout(checkJobBrowserStatus, 10);
+      var lastJobBrowserRequest = null;
 
       function checkJobBrowserStatus(){
-        $.post("/jobbrowser/jobs/", {
+        if (lastJobBrowserRequest !== null && lastJobBrowserRequest.readyState < 4) {
+          return;
+        }
+        window.clearTimeout(checkJobBrowserStatusIdx);
+        lastJobBrowserRequest = $.post("/jobbrowser/jobs/", {
             "format": "json",
             "state": "running",
             "user": "${user.username}"
@@ -258,10 +316,9 @@ from metadata.conf import has_optimizer, OPTIMIZER
             if (data != null && data.jobs != null) {
               huePubSub.publish('jobbrowser.data', data.jobs);
               if (data.jobs.length > 0){
-                $("#jobBrowserCount").removeClass("hide").text(data.jobs.length);
-              }
-              else {
-                $("#jobBrowserCount").addClass("hide");
+                $("#jobBrowserCount").show().text(data.jobs.length);
+              } else {
+                $("#jobBrowserCount").hide();
               }
             }
           checkJobBrowserStatusIdx = window.setTimeout(checkJobBrowserStatus, JB_CHECK_INTERVAL_IN_MILLIS);
@@ -282,7 +339,7 @@ from metadata.conf import has_optimizer, OPTIMIZER
         openTimeout = window.setTimeout(function () {
           $(".navigator li.open").removeClass("open");
           $(".navigator .nav-pills li.dropdown > ul.dropdown-menu").hide();
-          $("[rel='navigator-tooltip']").tooltip("hide");
+          $("[data-rel='navigator-tooltip']").tooltip("hide");
           _this.find("ul.dropdown-menu:eq(0)").show();
         }, _timeout);
       }
@@ -347,8 +404,43 @@ from metadata.conf import has_optimizer, OPTIMIZER
 </%def>
 
 <%def name="footer(messages)">
+
+<div id="progressStatus" class="uploadstatus well hide">
+  <h4>${ _('Upload progress') }</h4>
+  <div id="progressStatusBar" class="hide progress">
+    <div class="bar bar-upload"></div>
+  </div>
+  <div id="progressStatusContent" class="scrollable-uploadstatus">
+    <div class="updateStatus"> </div>
+  </div>
+</div>
+
 <script type="text/javascript">
+
+  huePubSub.subscribe('set.hue.version', function (version) {
+    $.post("/desktop/api2/user_preferences/hue_version", {
+      set: version
+    }, function (data) {
+      if (data && data.status == 0) {
+        location.href = version === 3 ? '/home' : '/hue'
+      }
+      else {
+        $.jHueNotify.error("${ _('An error occurred while saving your default Hue preference. Please try again...') }");
+      }
+    });
+  });
+
   $(document).ready(function () {
+    if ($.fn.editableform) {
+      $.fn.editableform.buttons =
+          '<button type="submit" class="btn btn-primary editable-submit disable-feedback">' +
+          '<i class="fa fa-fw fa-check"></i>' +
+          '</button>' +
+          '<button type="button" class="btn btn-default editable-cancel">' +
+          '<i class="fa fa-fw fa-times"></i>' +
+          '</button>';
+    }
+
     $(document).on("info", function (e, msg) {
       $.jHueNotify.info(msg);
     });
@@ -357,6 +449,10 @@ from metadata.conf import has_optimizer, OPTIMIZER
     });
     $(document).on("error", function (e, msg) {
       $.jHueNotify.error(msg);
+    });
+
+    $($('#zoomDetectFrame')[0].contentWindow).resize(function () {
+      $(window).trigger('zoom');
     });
 
     %if messages:
@@ -375,7 +471,7 @@ from metadata.conf import has_optimizer, OPTIMIZER
     var isLoginRequired = false;
     $(document).ajaxComplete(function (event, xhr, settings) {
       if (xhr.responseText === '/* login required */') {
-        isAutoLogout = settings.url == '/desktop/debug/is_idle';
+        var isAutoLogout = settings.url == '/desktop/debug/is_idle';
         $('.blurred').removeClass('blurred');
 
         if ($('#login-modal').length > 0 && $('#login-modal').is(':hidden')) {
@@ -398,9 +494,6 @@ from metadata.conf import has_optimizer, OPTIMIZER
           window.setTimeout(function () {
             $('.jHueNotify').remove();
           }, 200);
-        }
-        else {
-          location.reload();
         }
       }
     });
@@ -425,7 +518,6 @@ from metadata.conf import has_optimizer, OPTIMIZER
         $('#login-modal .login-error').removeClass('hide');
       }
     });
-
 
     $("div.navigator ul.dropdown-menu").css("maxHeight", $(window).height() - 50);
     var scrollableDropdownTimeout = -1;
@@ -495,21 +587,6 @@ from metadata.conf import has_optimizer, OPTIMIZER
         }
       }, 200);
     }
-    %if tours_and_tutorials:
-      $.jHueTour({});
-      if ($.totalStorage("jHueTourExtras") != null) {
-        $.jHueTour({tours: $.totalStorage("jHueTourExtras")});
-      }
-      var _qs = location.search;
-      if (_qs !== undefined && _qs.indexOf("tour=") > -1) {
-        $.jHueTour(getParameterByName("tour"), 1);
-      }
-      function getParameterByName(name) {
-        name = name.replace(/[\[]/, "\\\[").replace(/[\]]/, "\\\]");
-        var regex = new RegExp("[\\?&]" + name + "=([^&#]*)"), results = regex.exec(_qs);
-        return results == null ? "" : decodeURIComponent(results[1].replace(/\+/g, " "));
-      }
-    %endif
   });
 
   function resetPrimaryButtonsStatus() {

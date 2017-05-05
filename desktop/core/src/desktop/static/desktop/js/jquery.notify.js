@@ -72,21 +72,16 @@
       }
       else if (_this.options.level == TYPES.INFO) {
         el.addClass("alert-info");
-        scrollColor = '#338bb8';
+        scrollColor = '#0B7FAD';
       }
       el.find(".message").html("<strong>" + _this.options.message + "</strong>");
 
-      el.find(".message").niceScroll({
+      hueUtils.initNiceScroll(el.find(".message"), {
         cursorcolor: scrollColor,
         cursorborder: '1px solid ' + scrollColor,
-        cursoropacitymin: 0,
-        cursoropacitymax: 0.7,
-        scrollspeed: 100,
-        mousescrollstep: 60,
-        cursorminheight: 20,
         horizrailenabled: false,
         zindex: 14000,
-        railoffset: {left: 5}
+        railoffset: {left: 5},
       });
 
       if (_this.options.css != null) {

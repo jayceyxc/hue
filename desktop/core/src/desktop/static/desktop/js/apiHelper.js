@@ -14,23 +14,76 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+var ApiQueueManager = (function () {
+
+  var instance = null;
+
+  function ApiQueueManager() {
+    var self = this;
+    self.callQueue = {};
+  }
+
+  ApiQueueManager.prototype.getQueued = function (url, hash) {
+    var self = this;
+    return self.callQueue[url + (hash || '')];
+  };
+
+  ApiQueueManager.prototype.addToQueue = function (promise, url, hash) {
+    var self = this;
+    self.callQueue[url + (hash || '')] = promise;
+    promise.always(function () {
+      delete self.callQueue[url + (hash || '')];
+    })
+  };
+
+  return {
+    /**
+     * @returns {ApiQueueManager}
+     */
+    getInstance: function () {
+      if (instance === null) {
+        instance = new ApiQueueManager();
+      }
+      return instance;
+    }
+  };
+})();
+
 var ApiHelper = (function () {
 
   var AUTOCOMPLETE_API_PREFIX = "/notebook/api/autocomplete/";
   var SAMPLE_API_PREFIX = "/notebook/api/sample/";
   var DOCUMENTS_API = "/desktop/api2/doc/";
   var DOCUMENTS_SEARCH_API = "/desktop/api2/docs/";
+  var FETCH_CONFIG = '/desktop/api2/get_config/';
   var HDFS_API_PREFIX = "/filebrowser/view=";
+  var GIT_API_PREFIX = "/desktop/api/vcs/contents/";
   var S3_API_PREFIX = "/filebrowser/view=S3A://";
   var IMPALA_INVALIDATE_API = '/impala/api/invalidate';
   var CONFIG_SAVE_API = '/desktop/api/configurations/save/';
   var CONFIG_APPS_API = '/desktop/api/configurations';
-  var NAV_ADD_TAGS_API = '/metadata/api/navigator/add_tags';
-  var NAV_DELETE_TAGS_API = '/metadata/api/navigator/delete_tags';
-  var NAV_LIST_TAGS_API = '/metadata/api/navigator/list_tags';
-  var NAV_FIND_ENTITY_API = '/metadata/api/navigator/find_entity';
   var SOLR_COLLECTIONS_API = '/indexer/api/collections/';
   var HBASE_API_PREFIX = '/hbase/api/';
+  var SAVE_TO_FILE = '/filebrowser/save';
+
+  var NAV_URLS = {
+    ADD_TAGS: '/metadata/api/navigator/add_tags',
+    DELETE_TAGS: '/metadata/api/navigator/delete_tags',
+    LIST_TAGS: '/metadata/api/navigator/list_tags',
+    FIND_ENTITY: '/metadata/api/navigator/find_entity'
+  };
+
+  var NAV_OPT_URLS = {
+    TOP_AGGS: '/metadata/api/optimizer/top_aggs',
+    TOP_COLUMNS: '/metadata/api/optimizer/top_columns',
+    TOP_FILTERS: '/metadata/api/optimizer/top_filters',
+    TOP_JOINS: '/metadata/api/optimizer/top_joins',
+    TOP_TABLES: '/metadata/api/optimizer/top_tables'
+  };
+
+  var genericCacheCondition = function (data) {
+    return typeof data !== 'undefined' && typeof data.status !== 'undefined' && data.status === 0;
+  };
 
   /**
    * @param {Object} i18n
@@ -45,7 +98,7 @@ var ApiHelper = (function () {
     self.i18n = i18n;
     self.user = user;
     self.lastKnownDatabases = {};
-    self.fetchQueue = {};
+    self.queueManager = ApiQueueManager.getInstance();
     self.invalidateImpala = 'cache';
 
     huePubSub.subscribe('assist.clear.db.cache', function (options) {
@@ -54,6 +107,10 @@ var ApiHelper = (function () {
 
     huePubSub.subscribe('assist.clear.hdfs.cache', function () {
       $.totalStorage(self.getAssistCacheIdentifier({ sourceType: 'hdfs' }), {});
+    });
+
+    huePubSub.subscribe('assist.clear.git.cache', function () {
+      $.totalStorage(self.getAssistCacheIdentifier({ sourceType: 'git' }), {});
     });
 
     huePubSub.subscribe('assist.clear.s3.cache', function () {
@@ -78,6 +135,7 @@ var ApiHelper = (function () {
         clearAll: true
       });
       huePubSub.publish('assist.clear.hdfs.cache');
+      huePubSub.publish('assist.clear.git.cache');
       huePubSub.publish('assist.clear.s3.cache');
       huePubSub.publish('assist.clear.collections.cache');
       huePubSub.publish('assist.clear.hbase.cache');
@@ -129,10 +187,10 @@ var ApiHelper = (function () {
     var cachedData = $.totalStorage("hue.user.settings." + self.getTotalStorageUserPrefix(owner)) || {};
     if (typeof value !== 'undefined' && value !== null) {
       cachedData[id] = value;
-      $.totalStorage("hue.user.settings." + self.getTotalStorageUserPrefix(owner), cachedData);
+      $.totalStorage("hue.user.settings." + self.getTotalStorageUserPrefix(owner), cachedData, { secure: window.location.protocol.indexOf('https') > -1 });
     } else if (cachedData[id]) {
       delete cachedData[id];
-      $.totalStorage("hue.user.settings." + self.getTotalStorageUserPrefix(owner), cachedData);
+      $.totalStorage("hue.user.settings." + self.getTotalStorageUserPrefix(owner), cachedData, { secure: window.location.protocol.indexOf('https') > -1 });
     }
   };
 
@@ -194,8 +252,10 @@ var ApiHelper = (function () {
   ApiHelper.prototype.assistErrorCallback = function (options) {
     return function (errorResponse) {
       var errorMessage = 'Unknown error occurred';
-      if (errorResponse !== 'undefined') {
-        if (typeof errorResponse.responseText !== 'undefined') {
+      if (typeof errorResponse !== 'undefined' && errorResponse !== null) {
+        if (typeof errorResponse.statusText !== 'undefined' && errorResponse.statusText === 'abort') {
+          return;
+        } else if (typeof errorResponse.responseText !== 'undefined') {
           try {
             var errorJs = JSON.parse(errorResponse.responseText);
             if (typeof errorJs.message !== 'undefined') {
@@ -206,22 +266,19 @@ var ApiHelper = (function () {
           } catch(err) {
             errorMessage = errorResponse.responseText;
           }
-        } else if (typeof errorResponse.message !== 'undefined') {
+        } else if (typeof errorResponse.message !== 'undefined' && errorResponse.message !== null) {
           errorMessage = errorResponse.message;
-        } else if (typeof errorResponse.statusText !== 'undefined') {
+        } else if (typeof errorResponse.statusText !== 'undefined' && errorResponse.statusText !== null) {
           errorMessage = errorResponse.statusText;
-        } else if (errorResponse.error !== 'undefined' && toString.call(errorResponse.error) === '[object String]' ) {
+        } else if (errorResponse.error !== 'undefined' && Object.prototype.toString.call(errorResponse.error) === '[object String]' ) {
           errorMessage = errorResponse.error;
-        } else if (toString.call(errorResponse) === '[object String]') {
+        } else if (Object.prototype.toString.call(errorResponse) === '[object String]') {
           errorMessage = errorResponse;
         }
       }
 
       if (! options.silenceErrors) {
-        if (typeof window.console !== 'undefined') {
-          console.error(errorResponse);
-          console.error(new Error().stack);
-        }
+        hueUtils.logError(errorResponse);
         $(document).trigger("error", errorMessage);
       }
 
@@ -229,6 +286,12 @@ var ApiHelper = (function () {
         options.errorCallback(errorMessage);
       }
     };
+  };
+
+  ApiHelper.prototype.cancelActiveRequest = function (request) {
+    if (typeof request !== 'undefined' && request !== null && request.readyState < 4) {
+      request.abort();
+    }
   };
 
   /**
@@ -249,6 +312,20 @@ var ApiHelper = (function () {
       }
     })
     .fail(self.assistErrorCallback(options));
+  };
+
+  /**
+   * @param {Object} data
+   * @param {Object} options
+   * @param {function} [options.successCallback]
+   */
+  ApiHelper.prototype.saveSnippetToFile = function (data, options) {
+    var self = this;
+    $.post(SAVE_TO_FILE, data, function (result) {
+      if (typeof options.successCallback !== 'undefined') {
+        options.successCallback(result);
+      }
+    }, dataType='json').fail(self.assistErrorCallback(options));
   };
 
   /**
@@ -321,6 +398,53 @@ var ApiHelper = (function () {
 
     fetchCached.bind(self)($.extend({}, options, {
       sourceType: 'hdfs',
+      url: url,
+      fetchFunction: fetchFunction
+    }));
+  };
+
+  /**
+   * @param {Object} options
+   * @param {Function} options.successCallback
+   * @param {Function} [options.errorCallback]
+   * @param {boolean} [options.silenceErrors]
+   * @param {Number} [options.timeout]
+   *
+   * @param {string[]} options.pathParts
+   * @param {string} options.fileType
+   */
+  ApiHelper.prototype.fetchGitContents = function (options) {
+    var self = this;
+    var url = GIT_API_PREFIX + '?path=' + options.pathParts.join("/") + '&fileType=' + options.fileType;
+    var fetchFunction = function (storeInCache) {
+      if (options.timeout === 0) {
+        self.assistErrorCallback(options)({ status: -1 });
+        return;
+      }
+      $.ajax({
+        dataType: "json",
+        url: url,
+        timeout: options.timeout,
+        success: function (data) {
+          if (!data.error && !self.successResponseIsError(data)) {
+            if (data.fileType === 'dir' && typeof data.files !== 'undefined' && data.files !== null) {
+              if (data.files.length > 2) {
+                storeInCache(data);
+              }
+              options.successCallback(data);
+            } else if (data.fileType === 'file' && typeof data.content !== 'undefined' && data.content !== null) {
+              options.successCallback(data);
+            }
+          } else {
+            self.assistErrorCallback(options)(data);
+          }
+        }
+      })
+      .fail(self.assistErrorCallback(options));
+    };
+
+    fetchCached.bind(self)($.extend({}, options, {
+      sourceType: 'git',
       url: url,
       fetchFunction: fetchFunction
     }));
@@ -470,21 +594,6 @@ var ApiHelper = (function () {
     }));
   };
 
-  ApiHelper.prototype.getFetchQueue = function (fetchFunction, identifier) {
-    var self = this;
-    if (! self.fetchQueue[fetchFunction]) {
-      self.fetchQueue[fetchFunction] = {};
-    }
-    var queueForFunction = self.fetchQueue[fetchFunction];
-
-    var id = typeof identifier === 'undefined' || identifier === null ? 'DEFAULT_QUEUE' : identifier;
-
-    if (! queueForFunction[id]) {
-      queueForFunction[id] = [];
-    }
-    return queueForFunction[id];
-  };
-
   /**
    * @param {Object} options
    * @param {Function} [options.successCallback]
@@ -537,34 +646,39 @@ var ApiHelper = (function () {
   ApiHelper.prototype.fetchDocuments = function (options) {
     var self = this;
 
-    var queue = self.getFetchQueue('fetchDocuments', options.uuid);
-    queue.push(options);
-    if (queue.length > 1) {
+    var promise = self.queueManager.getQueued(DOCUMENTS_API, options.uuid);
+    var firstInQueue = typeof promise === 'undefined';
+    if (firstInQueue) {
+      promise = $.Deferred();
+      self.queueManager.addToQueue(promise, DOCUMENTS_API, options.uuid);
+    }
+
+    promise.done(options.successCallback).fail(self.assistErrorCallback(options));
+
+    if (!firstInQueue) {
       return;
     }
 
-    $.ajax({
+    var parameters = {
       url: DOCUMENTS_API,
       data: {
-        uuid: options.uuid
+        uuid: options.uuid,
       },
       success: function (data) {
-        while (queue.length > 0) {
-          var next = queue.shift();
-          if (! self.successResponseIsError(data)) {
-            next.successCallback(data);
-          } else {
-            self.assistErrorCallback(next)(data);
-          }
+        if (! self.successResponseIsError(data)) {
+          promise.resolve(data);
+        } else {
+          promise.reject(data);
         }
       }
-    })
-    .fail(function (response) {
-      while (queue.length > 0) {
-        var next = queue.shift();
-        self.assistErrorCallback(next)(response);
-      }
-    });
+    };
+
+    if (window.location.pathname.indexOf('/home') > -1 && window.location.getParameter('type') !== '') {
+      parameters['data']['type'] = ['directory', window.location.getParameter('type')];
+      parameters['traditional'] = true;
+    }
+
+    $.ajax(parameters).fail(promise.reject);
   };
 
   /**
@@ -581,7 +695,7 @@ var ApiHelper = (function () {
    */
   ApiHelper.prototype.searchDocuments = function (options) {
     var self = this;
-    $.ajax({
+    return $.ajax({
       url: DOCUMENTS_SEARCH_API,
       data: {
         uuid: options.uuid,
@@ -734,6 +848,21 @@ var ApiHelper = (function () {
   };
 
   /**
+   * @param {Object} options
+   * @param {Function} options.successCallback
+   * @param {Function} [options.errorCallback]
+   * @param {boolean} [options.silenceErrors]
+   *
+   * @param {string} options.uuid
+   */
+  ApiHelper.prototype.restoreDocument = function (options) {
+    var self = this;
+    self.simplePost("/desktop/api2/doc/restore", {
+      uuids: ko.mapping.toJSON(options.uuids)
+    }, options);
+  };
+
+  /**
    *
    * @param {Object} options
    * @param {string} options.sourceType
@@ -803,9 +932,7 @@ var ApiHelper = (function () {
           self.lastKnownDatabases[options.sourceType] = [];
           self.assistErrorCallback(options)(response);
         },
-        cacheCondition: function (data) {
-          return typeof data !== 'undefined' && data !== null && typeof data.databases !== 'undefined' && data.databases !== null && data.databases.length > 0;
-        }
+        cacheCondition: genericCacheCondition
       }));
     };
 
@@ -1027,38 +1154,6 @@ var ApiHelper = (function () {
    * @param {Function} options.successCallback
    * @param {Function} [options.errorCallback]
    * @param {boolean} [options.silenceErrors]
-   *
-   * @param {Object} [options.prefixFilter]
-   * @param {string} options.databaseName
-   * @param {string} options.tableName
-   * @param {string} options.columnName
-   */
-  ApiHelper.prototype.fetchTerms = function (options) {
-    var self = this;
-    $.ajax({
-      url: "/" + options.sourceType + "/api/table/" + options.databaseName + "/" + options.tableName + "/terms/" + options.columnName + "/" + (options.prefixFilter || ""),
-      data: {},
-      beforeSend: function (xhr) {
-        xhr.setRequestHeader("X-Requested-With", "Hue");
-      },
-      dataType: "json",
-      success: function (response) {
-        if (! self.successResponseIsError(response)) {
-          options.successCallback(response);
-        } else {
-          self.assistErrorCallback(options)(response);
-        }
-      },
-      error: self.assistErrorCallback(options)
-    });
-  };
-
-  /**
-   * @param {Object} options
-   * @param {string} options.sourceType
-   * @param {Function} options.successCallback
-   * @param {Function} [options.errorCallback]
-   * @param {boolean} [options.silenceErrors]
    * @param {Number} [options.timeout]
    * @param {Object} [options.editor] - Ace editor
    *
@@ -1069,23 +1164,8 @@ var ApiHelper = (function () {
     fetchAssistData.bind(self)($.extend({}, options, {
       url: AUTOCOMPLETE_API_PREFIX + options.databaseName,
       errorCallback: self.assistErrorCallback(options),
-      cacheCondition: function (data) {
-        return typeof data !== 'undefined' && data !== null && typeof data.tables_meta !== 'undefined' && data.tables_meta !== null && data.tables_meta.length > 0;
-      }
+      cacheCondition: genericCacheCondition
     }));
-  };
-
-  var fieldCacheCondition = function (data) {
-    if (typeof data !== 'undefined' && data !== null) {
-      return (typeof data.item !== 'undefined' && data.item !== null) ||
-          (typeof data.key !== 'undefined' && data.key !== null) ||
-          (typeof data.sample !== 'undefined' && data.sample !== null) ||
-          (typeof data.tables_meta !== 'undefined' && data.tables_meta !== null && data.tables_meta.length > 0) ||
-          (typeof data.extended_columns !== 'undefined' && data.extended_columns !== null && data.extended_columns.length > 0) ||
-          (typeof data.columns !== 'undefined' && data.columns !== null && data.columns.length > 0) ||
-          (typeof data.fields !== 'undefined' && data.fields !== null && data.fields.length > 0)
-    }
-    return false;
   };
 
   /**
@@ -1107,7 +1187,7 @@ var ApiHelper = (function () {
     fetchAssistData.bind(self)($.extend({}, options, {
       url: AUTOCOMPLETE_API_PREFIX + options.databaseName + "/" + options.tableName + fieldPart,
       errorCallback: self.assistErrorCallback(options),
-      cacheCondition: fieldCacheCondition
+      cacheCondition: genericCacheCondition
     }));
   };
 
@@ -1225,7 +1305,7 @@ var ApiHelper = (function () {
       fetchAssistData.bind(self)($.extend({}, options, {
         url: AUTOCOMPLETE_API_PREFIX + path.join('/'),
         errorCallback: self.assistErrorCallback(options),
-        cacheCondition: fieldCacheCondition
+        cacheCondition: genericCacheCondition
       }));
     });
   };
@@ -1249,9 +1329,7 @@ var ApiHelper = (function () {
       fetchAssistData.bind(self)($.extend({}, options, {
         url: SAMPLE_API_PREFIX + path.join('/'),
         errorCallback: self.assistErrorCallback(options),
-        cacheCondition: function (data) {
-          return data.status === 0 && typeof data.rows !== 'undefined' && data.rows.length > 0;
-        }
+        cacheCondition: genericCacheCondition
       }));
     });
   };
@@ -1275,54 +1353,62 @@ var ApiHelper = (function () {
     var clonedIdentifierChain = options.identifierChain.concat();
 
     var hierarchy = '';
-    if (! self.containsDatabase(options.sourceType, clonedIdentifierChain[0].name)) {
-      hierarchy = options.defaultDatabase;
-    } else {
-      hierarchy = clonedIdentifierChain.shift().name
-    }
-    hierarchy += '/' + clonedIdentifierChain.shift().name;
-    if (clonedIdentifierChain.length > 0) {
-      hierarchy += '/stats/' + $.map(clonedIdentifierChain, function (identifier) { return identifier.name }).join('/')
-    }
 
-    var url = "/" + (options.sourceType == "hive" ? "beeswax" : options.sourceType) + "/api/table/" + hierarchy;
-
-    var fetchFunction = function (storeInCache) {
-      if (options.timeout === 0) {
-        self.assistErrorCallback(options)({ status: -1 });
-        return;
-      }
-      $.ajax({
-        url: url,
-        data: {
-          "format" : 'json'
-        },
-        beforeSend: function (xhr) {
-          xhr.setRequestHeader("X-Requested-With", "Hue");
-        },
-        timeout: options.timeout
-      }).done(function (data) {
-        if (! self.successResponseIsError(data)) {
-          if ((typeof data.cols !== 'undefined' && data.cols.length > 0) || typeof data.sample !== 'undefined') {
-            storeInCache(data);
-          }
-          options.successCallback(data);
+    self.loadDatabases({
+      sourceType: options.sourceType,
+      successCallback: function () {
+        if (! self.containsDatabase(options.sourceType, clonedIdentifierChain[0].name)) {
+          hierarchy = options.defaultDatabase;
         } else {
-          self.assistErrorCallback(options)(data);
+          hierarchy = clonedIdentifierChain.shift().name
         }
-      })
-      .fail(self.assistErrorCallback(options))
-      .always(function () {
-        if (typeof options.editor !== 'undefined' && options.editor !== null) {
-          options.editor.hideSpinner();
+        hierarchy += '/' + clonedIdentifierChain.shift().name;
+        if (clonedIdentifierChain.length > 0) {
+          hierarchy += '/stats/' + $.map(clonedIdentifierChain, function (identifier) { return identifier.name }).join('/')
         }
-      });
-    };
 
-    fetchCached.bind(self)($.extend({}, options, {
-      url: url,
-      fetchFunction: fetchFunction
-    }));
+        var url = "/" + (options.sourceType == "hive" ? "beeswax" : options.sourceType) + "/api/table/" + hierarchy;
+
+        var fetchFunction = function (storeInCache) {
+          if (options.timeout === 0) {
+            self.assistErrorCallback(options)({ status: -1 });
+            return;
+          }
+          $.ajax({
+            url: url,
+            data: {
+              "format" : 'json'
+            },
+            beforeSend: function (xhr) {
+              xhr.setRequestHeader("X-Requested-With", "Hue");
+            },
+            timeout: options.timeout
+          }).done(function (data) {
+            if (! self.successResponseIsError(data)) {
+              if ((typeof data.cols !== 'undefined' && data.cols.length > 0) || typeof data.sample !== 'undefined') {
+                storeInCache(data);
+              }
+              options.successCallback(data);
+            } else {
+              self.assistErrorCallback(options)(data);
+            }
+          })
+            .fail(self.assistErrorCallback(options))
+            .always(function () {
+              if (typeof options.editor !== 'undefined' && options.editor !== null) {
+                options.editor.hideSpinner();
+              }
+            });
+        };
+
+        fetchCached.bind(self)($.extend({}, options, {
+          url: url,
+          fetchFunction: fetchFunction
+        }));
+      },
+      silenceErrors: options.silenceErrors,
+      errorCallback: options.errorCallback
+    });
   };
 
   /**
@@ -1339,8 +1425,12 @@ var ApiHelper = (function () {
     fetchAssistData.bind(self)($.extend({}, options, {
       url: AUTOCOMPLETE_API_PREFIX + options.hierarchy.join("/"),
       errorCallback: self.assistErrorCallback(options),
-      cacheCondition: fieldCacheCondition
+      cacheCondition: genericCacheCondition
     }));
+  };
+
+  ApiHelper.prototype.getClusterConfig = function (data) {
+    return $.post(FETCH_CONFIG, data);
   };
 
   /**
@@ -1352,6 +1442,7 @@ var ApiHelper = (function () {
    * @param {Function} [options.errorCallback]
    * @param {boolean} [options.silenceErrors]
    *
+   * @param {boolean} [options.isView] - Default false
    * @param {Object[]} options.identifierChain
    * @param {string} options.identifierChain.name
    * @param {string} [options.defaultDatabase]
@@ -1363,13 +1454,15 @@ var ApiHelper = (function () {
 
     var database = options.defaultDatabase && !self.containsDatabase(options.sourceType, clonedIdentifierChain[0].name) ? options.defaultDatabase : clonedIdentifierChain.shift().name;
 
-    var url = NAV_FIND_ENTITY_API + '?type=database&name=' + database;
+    var url = NAV_URLS.FIND_ENTITY + '?type=database&name=' + database;
+
+    var isView = !!options.isView;
 
     if (clonedIdentifierChain.length > 0) {
       var table = clonedIdentifierChain.shift().name;
-      url = NAV_FIND_ENTITY_API + '?type=table&database=' + database + '&name=' + table;
+      url = NAV_URLS.FIND_ENTITY + (isView ? '?type=view' : '?type=table') + '&database=' + database + '&name=' + table;
       if (clonedIdentifierChain.length > 0) {
-        url = NAV_FIND_ENTITY_API + '?type=field&database=' + database + '&table=' + table + '&name=' + clonedIdentifierChain.shift().name;
+        url = NAV_URLS.FIND_ENTITY + '?type=field&database=' + database + '&table=' + table + '&name=' + clonedIdentifierChain.shift().name;
       }
     }
 
@@ -1381,14 +1474,14 @@ var ApiHelper = (function () {
   };
 
   ApiHelper.prototype.addNavTags = function (entityId, tags) {
-    return $.post(NAV_ADD_TAGS_API, {
+    return $.post(NAV_URLS.ADD_TAGS, {
       id: ko.mapping.toJSON(entityId),
       tags: ko.mapping.toJSON(tags)
     });
   };
 
   ApiHelper.prototype.deleteNavTags = function (entityId, tags) {
-    return $.post(NAV_DELETE_TAGS_API, {
+    return $.post(NAV_URLS.DELETE_TAGS, {
       id: ko.mapping.toJSON(entityId),
       tags: ko.mapping.toJSON(tags)
     });
@@ -1405,21 +1498,34 @@ var ApiHelper = (function () {
   ApiHelper.prototype.listNavTags = function (options) {
     var self = this;
     fetchAssistData.bind(self)($.extend({ sourceType: 'nav' }, options, {
-      url: NAV_LIST_TAGS_API,
+      url: NAV_URLS.LIST_TAGS,
       errorCallback: self.assistErrorCallback(options),
       noCache: true
     }));
   };
 
-  ApiHelper.prototype.createNavDbTablesJson = function (options) {
+  ApiHelper.prototype.createNavOptDbTablesJson = function (options) {
     var self = this;
-    var dbTables = [];
+    var tables = [];
+    var tableIndex = {};
     options.tables.forEach(function (table) {
       var clonedIdentifierChain = table.identifierChain.concat();
-      var database = options.defaultDatabase && !self.containsDatabase(options.sourceType, clonedIdentifierChain[0].name) ? options.defaultDatabase : clonedIdentifierChain.shift().name;
-      dbTables.push(database + '.' + $.map(clonedIdentifierChain, function (identifier) { return identifier.name }).join('.'));
+
+      var databasePrefix;
+      if (clonedIdentifierChain.length > 1 && self.containsDatabase(options.sourceType, clonedIdentifierChain[0].name)) {
+        databasePrefix = clonedIdentifierChain.shift().name + '.';
+      } else if (options.defaultDatabase) {
+        databasePrefix = options.defaultDatabase + '.';
+      } else {
+        databasePrefix = '';
+      }
+      var identifier = databasePrefix  + $.map(clonedIdentifierChain, function (identifier) { return identifier.name }).join('.');
+      if (!tableIndex[databasePrefix  + $.map(clonedIdentifierChain, function (identifier) { return identifier.name }).join('.')]) {
+        tables.push(identifier);
+        tableIndex[identifier] = true;
+      }
     });
-    return ko.mapping.toJSON(dbTables);
+    return ko.mapping.toJSON(tables);
   };
 
   /**
@@ -1435,7 +1541,7 @@ var ApiHelper = (function () {
    */
   ApiHelper.prototype.fetchNavOptTopTables = function (options) {
     var self = this;
-    self.fetchNavOptCached('/metadata/api/optimizer/top_tables', options, function (data) {
+    self.fetchNavOptCached(NAV_OPT_URLS.TOP_TABLES, options, function (data) {
       return data.status === 0;
     });
   };
@@ -1456,7 +1562,7 @@ var ApiHelper = (function () {
    */
   ApiHelper.prototype.fetchNavOptTopColumns = function (options) {
     var self = this;
-    self.fetchNavOptCached('/metadata/api/optimizer/top_columns', options, function (data) {
+    self.fetchNavOptCached(NAV_OPT_URLS.TOP_COLUMNS, options, function (data) {
       return data.status === 0;
     });
   };
@@ -1477,7 +1583,7 @@ var ApiHelper = (function () {
    */
   ApiHelper.prototype.fetchNavOptPopularJoins = function (options) {
     var self = this;
-    self.fetchNavOptCached('/metadata/api/optimizer/top_joins', options, function (data) {
+    self.fetchNavOptCached(NAV_OPT_URLS.TOP_JOINS, options, function (data) {
       return data.status === 0;
     });
   };
@@ -1498,7 +1604,7 @@ var ApiHelper = (function () {
    */
   ApiHelper.prototype.fetchNavOptTopFilters = function (options) {
     var self = this;
-    self.fetchNavOptCached('/metadata/api/optimizer/top_filters', options, function (data) {
+    self.fetchNavOptCached(NAV_OPT_URLS.TOP_FILTERS, options, function (data) {
       return data.status === 0;
     });
   };
@@ -1520,7 +1626,7 @@ var ApiHelper = (function () {
    */
   ApiHelper.prototype.fetchNavOptTopAggs = function (options) {
     var self = this;
-    self.fetchNavOptCached('/metadata/api/optimizer/top_aggs', options, function (data) {
+    self.fetchNavOptCached(NAV_OPT_URLS.TOP_AGGS, options, function (data) {
       return data.status === 0;
     });
   };
@@ -1531,7 +1637,7 @@ var ApiHelper = (function () {
     var data, hash;
     if (options.tables) {
       data = {
-        dbTables: self.createNavDbTablesJson(options)
+        dbTables: self.createNavOptDbTablesJson(options)
       };
       hash = data.dbTables.hashCode();
     } else if (options.database) {
@@ -1539,6 +1645,23 @@ var ApiHelper = (function () {
         database: options.database
       };
       hash = data.database;
+    }
+
+    var promise = self.queueManager.getQueued(url, hash);
+    var firstInQueue = typeof promise === 'undefined';
+    if (firstInQueue) {
+      promise = $.Deferred();
+      self.queueManager.addToQueue(promise, url, hash);
+    }
+
+    promise.done(options.successCallback).fail(self.assistErrorCallback(options)).always(function () {
+      if (typeof options.editor !== 'undefined' && options.editor !== null) {
+        options.editor.hideSpinner();
+      }
+    });
+
+    if (!firstInQueue) {
+      return;
     }
 
     var fetchFunction = function (storeInCache) {
@@ -1554,21 +1677,16 @@ var ApiHelper = (function () {
         timeout: options.timeout
       })
       .done(function (data) {
-        if (data.status === 0 && !self.successResponseIsError(data)) {
+        if (data.status === 0) {
           if (cacheCondition(data)) {
             storeInCache(data);
           }
-          options.successCallback(data);
+          promise.resolve(data);
         } else {
-          self.assistErrorCallback(options)(data);
+          promise.reject(data);
         }
       })
-      .fail(self.assistErrorCallback(options))
-      .always(function () {
-        if (typeof options.editor !== 'undefined' && options.editor !== null) {
-          options.editor.hideSpinner();
-        }
-      });
+      .fail(promise.reject);
     };
 
     fetchCached.bind(self)($.extend({}, options, {
@@ -1586,7 +1704,7 @@ var ApiHelper = (function () {
       $.post('/desktop/api/search/entities_interactive', {
         query_s: ko.mapping.toJSON(options.query),
         limit: 5,
-        sources: '["*"]'
+        sources: '["sql", "hdfs", "s3"]'
       }),
       $.post('/desktop/api/search/entities_interactive', {
           query_s: ko.mapping.toJSON(options.query),
@@ -1595,8 +1713,10 @@ var ApiHelper = (function () {
         })
       ]
     ).done(function (metadata, documents) {
-      if (metadata[0].status === 0 && !self.successResponseIsError(metadata[0])) {
-    	metadata[0].resultsHuedocuments = documents[0].results;
+      if (metadata[0].status === 0 || documents[0].status === 0) {
+        if (documents[0].status === 0) {
+           metadata[0].resultsHuedocuments = documents[0].results;
+        }
         options.successCallback(metadata[0]);
       } else {
         self.assistErrorCallback(options)(metadata);
@@ -1606,17 +1726,33 @@ var ApiHelper = (function () {
 
   ApiHelper.prototype.navSearchAutocomplete = function (options) {
     var self = this;
-    $.post('/desktop/api/search/entities_interactive', {
+    return $.post('/desktop/api/search/entities_interactive', {
       query_s: ko.mapping.toJSON(options.query),
       limit: 10,
       sources: '["' + options.source + '"]'
     }).done(function (data) {
       if (data.status === 0 && !self.successResponseIsError(data)) {
         options.successCallback(data);
+      } else if (data.status === -2 && typeof data.message !== 'undefined' && typeof data.message.message !== 'undefined') {
+        options.errorCallback({
+          source: 'navigator',
+          message: data.message.message
+        })
+      } else if (data.status === -2 && typeof data.message !== 'undefined') {
+        options.errorCallback({
+          source: 'navigator',
+          message: data.message
+        })
       } else {
         self.assistErrorCallback(options)(data);
       }
     }).fail(self.assistErrorCallback(options));
+  };
+
+  ApiHelper.prototype.formatSql = function (statements) {
+    return $.post("/notebook/api/format", {
+      statements: statements
+    });
   };
 
   /**
@@ -1650,24 +1786,25 @@ var ApiHelper = (function () {
       options.editor.showSpinner();
     }
 
-    var queue = self.getFetchQueue('fetchAssistData', options.sourceType + '_' + options.url);
-    queue.push(options);
-    if (queue.length > 1) {
+    var promise = self.queueManager.getQueued(options.url, options.sourceType);
+    var firstInQueue = typeof promise === 'undefined';
+    if (firstInQueue) {
+      promise = $.Deferred();
+      self.queueManager.addToQueue(promise, options.url, options.sourceType);
+    }
+
+    promise.done(options.successCallback).fail(self.assistErrorCallback(options)).always(function () {
+      if (typeof options.editor !== 'undefined' && options.editor !== null) {
+        options.editor.hideSpinner();
+      }
+    });
+
+    if (!firstInQueue) {
       return;
     }
 
-    var failCallback = function (data) {
-      while (queue.length > 0) {
-        var next = queue.shift();
-        next.errorCallback(data);
-        if (typeof next.editor !== 'undefined' && next.editor !== null) {
-          next.editor.hideSpinner();
-        }
-      }
-    };
-
     if (options.timeout === 0) {
-      failCallback({ status: -1 });
+      promise.reject({ status: -1 });
       return;
     }
 
@@ -1683,7 +1820,7 @@ var ApiHelper = (function () {
       timeout: options.timeout
     }).success(function (data) {
       // Safe to assume all requests in the queue have the same cacheCondition
-      if (!options.noCache && data.status === 0 && !self.successResponseIsError(data) && options.cacheCondition(data)) {
+      if (!options.noCache && data.status === 0 && options.cacheCondition(data)) {
         var cacheIdentifier = self.getAssistCacheIdentifier(options);
         cachedData = $.totalStorage(cacheIdentifier) || {};
         cachedData[options.url] = {
@@ -1692,18 +1829,12 @@ var ApiHelper = (function () {
         };
         $.totalStorage(cacheIdentifier, cachedData);
       }
-      while (queue.length > 0) {
-        var next = queue.shift();
-        if (data.status === 0 && !self.successResponseIsError(data)) {
-          next.successCallback(data);
-        } else {
-          next.errorCallback(data);
-        }
-        if (typeof next.editor !== 'undefined' && next.editor !== null) {
-          next.editor.hideSpinner();
-        }
+      if (data.status === 0) {
+        promise.resolve(data);
+      } else {
+        promise.reject(data);
       }
-    }).fail(failCallback);
+    }).fail(promise.reject);
   };
 
   /**

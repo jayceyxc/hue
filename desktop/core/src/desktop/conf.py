@@ -29,7 +29,7 @@ from desktop.redaction.engine import parse_redaction_policy_from_file
 from desktop.lib.conf import Config, ConfigSection, UnspecifiedConfigSection,\
                              coerce_bool, coerce_csv, coerce_json_dict,\
                              validate_path, list_of_compiled_res, coerce_str_lowercase, \
-                             coerce_password_from_script
+                             coerce_password_from_script, coerce_string
 from desktop.lib.i18n import force_unicode
 from desktop.lib.paths import get_desktop_root
 
@@ -100,6 +100,14 @@ def coerce_positive_integer(integer):
 
   return integer
 
+def coerce_zero_or_positive_integer(integer):
+  integer = int(integer)
+
+  if integer < 0:
+    raise Exception('integer is negative')
+
+  return integer
+
 def is_https_enabled():
   """Hue is configured for HTTPS."""
   return bool(SSL_CERTIFICATE.get() and SSL_PRIVATE_KEY.get())
@@ -122,6 +130,13 @@ HTTP_ALLOWED_METHODS = Config(
   type=coerce_csv,
   private=True,
   default=['OPTIONS', 'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'CONNECT'])
+
+HUE_LOAD_BALANCER = Config(
+  key="hue_load_balancer",
+  help=_("A comma-separated list of available Hue load balancers."),
+  type=coerce_csv,
+  default=[]
+)
 
 X_FRAME_OPTIONS = Config(
   key="http_x_frame_options",
@@ -220,11 +235,11 @@ SECURE_CONTENT_SECURITY_POLICY = Config(
   key="secure_content_security_policy",
   help=_('X-Content-Type-Options: nosniff This is a HTTP response header feature that helps prevent attacks based on MIME-type confusion.'),
   type=str,
-  default="script-src 'self' 'unsafe-inline' 'unsafe-eval' *.google-analytics.com *.doubleclick.net *.mathjax.org data:;"+
+  default="script-src 'self' 'unsafe-inline' 'unsafe-eval' *.google-analytics.com *.doubleclick.net data:;"+
           "img-src 'self' *.google-analytics.com *.doubleclick.net http://*.tile.osm.org *.tile.osm.org *.gstatic.com data:;"+
-          "style-src 'self' 'unsafe-inline';"+
+          "style-src 'self' 'unsafe-inline' fonts.googleapis.com;"+
           "connect-src 'self';"+
-          "child-src 'self' data:;"+
+          "child-src 'self' data: *.vimeo.com;"+
           "object-src 'none'")
 
 SECURE_SSL_REDIRECT = Config(
@@ -415,10 +430,47 @@ LOG_REDACTION_FILE = Config(
 
 ALLOWED_HOSTS = Config(
   key='allowed_hosts',
-  dynamic_default=get_dn,
+  # dynamic_default=get_dn, # Currently off as pretty disruptive
+  default=['*'],
   type=coerce_csv,
   help=_('Comma separated list of strings representing the host/domain names that the Hue server can serve.')
 )
+
+VCS = UnspecifiedConfigSection(
+  "vcs",
+  help="One entry for each Version Control",
+  each=ConfigSection(
+    help="""Configuration options for source version control used to list and
+            save files from the editor. Example: Git, SVN""",
+    members=dict(
+      REMOTE_URL = Config(
+        key="remote_url",
+        help=_("Base URL to Interface Remote Server"),
+        default='https://github.com/cloudera/hue/tree/master',
+        type=coerce_string,
+      ),
+      API_URL = Config(
+        key="api_url",
+        help=_("Base URL to Interface API"),
+        default='https://api.github.com',
+        type=coerce_string,
+      ),
+      CLIENT_ID = Config(
+        key="client_id",
+        help=_("The Client ID of the Interface application."),
+        type=coerce_string,
+        default=""
+      ),
+      CLIENT_SECRET = Config(
+        key="client_secret",
+        help=_("The Client Secret of the Interface application."),
+        type=coerce_string,
+        default=""
+      )
+    )
+  )
+)
+
 
 def default_secure_cookie():
   """Enable secure cookies if HTTPS is enabled."""
@@ -563,6 +615,12 @@ DATABASE = ConfigSection(
       type=str,
       default='',
     ),
+    SCHEMA=Config(
+      key='schema',
+      help=_('Database schema, to be used only when public schema is revoked in postgres.'),
+      type=str,
+      default='public',
+    ),
     PASSWORD=Config(
       key='password',
       help=_('Database password.'),
@@ -594,6 +652,12 @@ DATABASE = ConfigSection(
       help=_('Database options to send to the server when connecting.'),
       type=coerce_json_dict,
       dynamic_default=default_database_options
+    ),
+    CONN_MAX_AGE=Config(
+      key='conn_max_age',
+      help=_('The CONN_MAX_AGE parameter controls db connections persistency in seconds.'),
+      type=coerce_zero_or_positive_integer,
+      default=0,
     )
   )
 )
@@ -1201,7 +1265,7 @@ DJANGO_EMAIL_BACKEND = Config(
 
 USE_NEW_AUTOCOMPLETER = Config( # This now refers to the new autocomplete dropdown
   key='use_new_autocompleter',
-  default=False,
+  default=True,
   type=coerce_bool,
   help=_('Enable the improved editor autocomplete dropdown')
 )
@@ -1209,7 +1273,7 @@ USE_NEW_AUTOCOMPLETER = Config( # This now refers to the new autocomplete dropdo
 EDITOR_AUTOCOMPLETE_TIMEOUT = Config(
   key='editor_autocomplete_timeout',
   type=int,
-  default=5000,
+  default=10000,
   help=_('Timeout value in ms for autocomplete of columns, tables, values etc. 0 = disabled')
 )
 
@@ -1220,9 +1284,14 @@ USE_NEW_EDITOR = Config( # To remove in Hue 4
   help=_('Choose whether to show the new SQL editor.')
 )
 
+def is_hue4():
+  """Hue is configured to show version 4."""
+  return IS_HUE_4.get()
+
+
 USE_NEW_SIDE_PANELS = Config( # To remove in Hue 4
   key='use_new_side_panels',
-  default=False,
+  dynamic_default=is_hue4,
   type=coerce_bool,
   help=_('Choose whether to show extended left and right panels.')
 )
@@ -1233,6 +1302,7 @@ USE_DEFAULT_CONFIGURATION = Config(
   type=coerce_bool,
   help=_('Enable saved default configurations for Hive, Impala, Spark, and Oozie.')
 )
+
 
 IS_HUE_4 = Config( # To remove in Hue 5
   key='is_hue_4',

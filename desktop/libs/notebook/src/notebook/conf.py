@@ -23,13 +23,14 @@ except ImportError:
 from django.utils.translation import ugettext_lazy as _t
 
 from desktop import appmanager
+from desktop.conf import is_hue4
 from desktop.lib.conf import Config, UnspecifiedConfigSection, ConfigSection,\
-  coerce_json_dict, coerce_string, coerce_bool, coerce_csv
+  coerce_json_dict, coerce_bool, coerce_csv
 
 
 def is_oozie_enabled():
   """Oozie needs to be available as it is the backend."""
-  return len([app for app in appmanager.DESKTOP_MODULES if app.name == 'oozie']) > 0
+  return len([app for app in appmanager.DESKTOP_MODULES if app.name == 'oozie']) > 0 and is_hue4()
 
 
 SHOW_NOTEBOOKS = Config(
@@ -42,20 +43,19 @@ SHOW_NOTEBOOKS = Config(
 def _remove_duplications(a_list):
   return list(OrderedDict.fromkeys(a_list))
 
+
 def get_ordered_interpreters(user=None):
   if not INTERPRETERS.get():
-    _default_interpreters()
+    _default_interpreters(user)
 
   interpreters = INTERPRETERS.get()
   interpreters_shown_on_wheel = _remove_duplications(INTERPRETERS_SHOWN_ON_WHEEL.get())
 
   unknown_interpreters = set(interpreters_shown_on_wheel) - set(interpreters)
   if unknown_interpreters:
-      raise ValueError("Interpreters from interpreters_shown_on_wheel is not in the list of Interpreters %s"
-                       % unknown_interpreters)
+      raise ValueError("Interpreters from interpreters_shown_on_wheel is not in the list of Interpreters %s" % unknown_interpreters)
 
-  reordered_interpreters = interpreters_shown_on_wheel + \
-                           [i for i in interpreters if i not in interpreters_shown_on_wheel]
+  reordered_interpreters = interpreters_shown_on_wheel + [i for i in interpreters if i not in interpreters_shown_on_wheel]
 
   return [{
       "name": interpreters[i].NAME.get(),
@@ -64,6 +64,7 @@ def get_ordered_interpreters(user=None):
       "options": interpreters[i].OPTIONS.get()}
       for i in reordered_interpreters
   ]
+
 
 INTERPRETERS = UnspecifiedConfigSection(
   "interpreters",
@@ -127,7 +128,7 @@ ENABLE_QUERY_SCHEDULING = Config(
   key="enable_query_scheduling",
   help=_t("Flag to enable the creation of a coordinator for the current SQL query."),
   type=bool,
-  default=False
+  dynamic_default=is_hue4
 )
 
 ENABLE_BATCH_EXECUTE = Config(
@@ -138,43 +139,57 @@ ENABLE_BATCH_EXECUTE = Config(
 )
 
 
-GITHUB_REMOTE_URL = Config(
-    key="github_remote_url",
-    help=_t("Base URL to GitHub Remote Server"),
-    default='https://github.com',
-    type=coerce_string,
-)
+def _default_interpreters(user):
+  interpreters = []
+  apps = appmanager.get_apps_dict(user)
 
-GITHUB_API_URL = Config(
-    key="github_api_url",
-    help=_t("Base URL to GitHub API"),
-    default='https://api.github.com',
-    type=coerce_string,
-)
+  if 'impala' in apps:
+    interpreters.append(('hive', {
+      'name': 'Hive', 'interface': 'hiveserver2', 'options': {}
+    }),)
 
-GITHUB_CLIENT_ID = Config(
-    key="github_client_id",
-    help=_t("The Client ID of the GitHub application."),
-    type=coerce_string,
-    default=""
-)
+  if 'impala' in apps:
+    interpreters.append(('impala', {
+      'name': 'Impala', 'interface': 'hiveserver2', 'options': {}
+    }),)
 
-GITHUB_CLIENT_SECRET = Config(
-    key="github_client_secret",
-    help=_t("The Client Secret of the GitHub application."),
-    type=coerce_string,
-    default=""
-)
+  if 'pig' in apps:
+    interpreters.append(('pig', {
+      'name': 'Pig', 'interface': 'oozie', 'options': {}
+    }))
 
-
-def _default_interpreters():
-  INTERPRETERS.set_for_testing(OrderedDict((
-      ('hive', {
-          'name': 'Hive', 'interface': 'hiveserver2', 'options': {}
+  if 'oozie' in apps:
+    interpreters.extend((
+      ('pig', {
+          'name': 'Pig', 'interface': 'oozie', 'options': {}
       }),
-      ('impala', {
-          'name': 'Impala', 'interface': 'hiveserver2', 'options': {}
+      ('java', {
+          'name': 'Java', 'interface': 'oozie', 'options': {}
       }),
+      ('sqoop1', {
+          'name': 'Sqoop 1', 'interface': 'oozie', 'options': {}
+      }),
+      ('distcp', {
+          'name': 'Distcp', 'interface': 'oozie', 'options': {}
+      }),
+      ('spark2', {
+          'name': 'Spark', 'interface': 'oozie', 'options': {}
+      }),
+      ('mapreduce', {
+          'name': 'MapReduce', 'interface': 'oozie', 'options': {}
+      }),
+      ('shell', {
+          'name': 'Shell', 'interface': 'oozie', 'options': {}
+      }),
+    ))
+
+  if 'search' in apps: # And Solr 6+
+    interpreters.append(('solr', {
+        'name': 'Solr SQL', 'interface': 'solr', 'options': {}
+    }),)
+
+  if SHOW_NOTEBOOKS.get():
+    interpreters.extend((
       ('spark', {
           'name': 'Scala', 'interface': 'livy', 'options': {}
       }),
@@ -190,36 +205,6 @@ def _default_interpreters():
       ('py', {
           'name': 'Spark Submit Python', 'interface': 'livy-batch', 'options': {}
       }),
-      ('pig', {
-          'name': 'Pig', 'interface': 'oozie', 'options': {}
-      }),
-      ('solr', {
-          'name': 'Solr SQL', 'interface': 'solr', 'options': {}
-      }),
-      ('java', {
-          'name': 'Java', 'interface': 'oozie', 'options': {}
-      })
-      ,
-      ('sqoop1', {
-          'name': 'Sqoop 1', 'interface': 'oozie', 'options': {}
-      })
-      ,
-      ('distcp', {
-          'name': 'Distcp', 'interface': 'oozie', 'options': {}
-      })
-      ,
-      ('spark2', {
-          'name': 'Spark', 'interface': 'oozie', 'options': {}
-      })
-      ,
-      ('mapreduce', {
-          'name': 'MapReduce', 'interface': 'oozie', 'options': {}
-      })
-      ,
-      ('shell', {
-          'name': 'Shell', 'interface': 'oozie', 'options': {}
-      })
-      ,
       ('text', {
           'name': 'Text', 'interface': 'text', 'options': {}
       }),
@@ -227,5 +212,5 @@ def _default_interpreters():
           'name': 'Markdown', 'interface': 'text', 'options': {}
       })
     ))
-  )
 
+  INTERPRETERS.set_for_testing(OrderedDict(interpreters))

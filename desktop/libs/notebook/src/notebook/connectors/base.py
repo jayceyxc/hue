@@ -17,6 +17,7 @@
 
 import json
 import logging
+import re
 import uuid
 
 from django.utils.translation import ugettext as _
@@ -34,7 +35,9 @@ class SessionExpired(Exception):
   pass
 
 class QueryExpired(Exception):
-  pass
+  def __init__(self, message=None):
+    super(QueryExpired, self).__init__()
+    self.message = message
 
 class AuthenticationRequired(Exception):
   pass
@@ -71,7 +74,8 @@ class Notebook(object):
           'description': '',
           'type': 'notebook',
           'isSaved': False,
-          'isManaged': False,
+          'isManaged': False, # Aka isTask
+          'skipHistorify': False,
           'sessions': [],
           'snippets': [],
       }
@@ -102,7 +106,7 @@ class Notebook(object):
        'status': 'running',
        'statement_raw': sql,
        'statement': sql,
-       'type': 'query-hive',
+       'type': 'hive',
        'properties': {
             'files': [],
             'functions': [],
@@ -110,7 +114,7 @@ class Notebook(object):
        },
        'database': database,
     }))
-    self._add_session(_data, 'query-hive')
+    self._add_session(_data, 'hive')
 
     self.data = json.dumps(_data)
 
@@ -180,7 +184,6 @@ class Notebook(object):
     from notebook.api import _execute_notebook # Cyclic dependency
 
     notebook_data = self.get_data()
-    #snippet = {'wasBatchExecuted': batch, 'type': 'oozie', 'id': notebook_data['snippets'][0]['id'], 'statement': ''}
     snippet = notebook_data['snippets'][0]
     snippet['wasBatchExecuted'] = batch
 
@@ -259,7 +262,7 @@ class Api(object):
     pass
 
   def fetch_result_size(self, notebook, snippet):
-    pass
+    raise OperationNotSupported()
 
   def download(self, notebook, snippet, format):
     pass
@@ -289,5 +292,8 @@ class Api(object):
   def statement_similarity(self, notebook, snippet, source_platform, target_platform): raise NotImplementedError()
 
 
-def _get_snippet_name(notebook):
-  return (('%(name)s' if notebook.get('name') else '%(type)s-%(id)s') % notebook).replace('-', '_')
+def _get_snippet_name(notebook, unique=False, table_format=False):
+  name = (('%(name)s' + ('%(id)s' if unique else '') if notebook.get('name') else '%(type)s-%(id)s') % notebook)
+  if table_format:
+    name = re.sub('[-|\s:]', '_', name)
+  return name

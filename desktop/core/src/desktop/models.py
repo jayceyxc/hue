@@ -19,8 +19,13 @@ import calendar
 import json
 import logging
 import os
-import re
+import urllib
 import uuid
+
+try:
+  from collections import OrderedDict
+except ImportError:
+  from ordereddict import OrderedDict # Python 2.6
 
 from itertools import chain
 
@@ -32,10 +37,13 @@ from django.core.urlresolvers import reverse, NoReverseMatch
 from django.db import connection, models, transaction
 from django.db.models import Q
 from django.db.models.query import QuerySet
-from django.template.defaultfilters import urlencode
 from django.utils.translation import ugettext as _, ugettext_lazy as _t
 
 from settings import HUE_DESKTOP_VERSION
+
+from aws.conf import is_enabled as is_s3_enabled, has_s3_access
+from dashboard.conf import IS_ENABLED as IS_DASHBOARD_ENABLED
+from notebook.conf import SHOW_NOTEBOOKS, get_ordered_interpreters
 
 from desktop import appmanager
 from desktop.lib.i18n import force_unicode
@@ -52,8 +60,6 @@ SAMPLE_USER_OWNERS = ['hue', 'sample']
 
 UTC_TIME_FORMAT = "%Y-%m-%dT%H:%MZ"
 HUE_VERSION = None
-
-DOC2_NAME_INVALID_CHARS = "[<>/~`]"
 
 
 def uuid_default():
@@ -371,7 +377,7 @@ class DocumentManager(models.Manager):
       LOG.warn('Object %s already has documents: %s' % (content_object, content_object.doc.all()))
       return content_object.doc.all()[0]
 
-  def sync(self):
+  def sync(self, doc2_only=True):
 
     def find_jobs_with_no_doc(model):
       jobs = model.objects.filter(doc__isnull=True)
@@ -477,7 +483,7 @@ class DocumentManager(models.Manager):
       LOG.exception('error syncing Document2')
 
 
-    if Document._meta.db_table in table_names:
+    if not doc2_only and Document._meta.db_table in table_names:
       # Make sure doc have at least a tag
       try:
         for doc in Document.objects.filter(tags=None):
@@ -545,6 +551,8 @@ class DocumentManager(models.Manager):
           # the documents it's referencing from our document query. Messy, but it
           # works.
 
+          # TODO: This can be several 100k entries for large databases.
+          # Need to figure out a better way to handle this scenario.
           docs = Document.objects.all()
 
           for content_type in ContentType.objects.all():
@@ -889,9 +897,7 @@ class Document2QueryMixin(object):
       docs = docs.exclude(is_managed=True)
 
     if not include_trashed:
-      # Since the Trash folder can have multiple directory levels, we need to check full path and exclude those IDs
-      trashed_ids = [doc.id for doc in docs if Document2.TRASH_DIR in doc.path]
-      docs = docs.exclude(id__in=trashed_ids)
+      docs = docs.exclude(is_trashed=True)
 
     return docs.defer('description', 'data', 'extra', 'search').distinct().order_by('-last_modified')
 
@@ -1050,7 +1056,8 @@ class Document2(models.Model):
   last_modified = models.DateTimeField(auto_now=True, db_index=True, verbose_name=_t('Time last modified'))
   version = models.SmallIntegerField(default=1, verbose_name=_t('Document version'), db_index=True)
   is_history = models.BooleanField(default=False, db_index=True)
-  is_managed = models.BooleanField(default=False, db_index=True, verbose_name=_t('If managed under the cover by Hue and never by the user'))
+  is_managed = models.BooleanField(default=False, db_index=True, verbose_name=_t('If managed under the cover by Hue and never by the user')) # Aka isTask
+  is_trashed = models.NullBooleanField(default=False, db_index=True, verbose_name=_t('True if trashed'))
 
   dependencies = models.ManyToManyField('self', symmetrical=False, related_name='dependents', db_index=True)
 
@@ -1077,10 +1084,11 @@ class Document2(models.Model):
 
   @property
   def path(self):
+    quoted_name = urllib.quote(self.name.encode('utf-8'))
     if self.parent_directory:
-      return '%s/%s' % (self.parent_directory.path, self.name)
+      return '%s/%s' % (self.parent_directory.path, quoted_name)
     else:
-      return self.name
+      return quoted_name
 
   @property
   def dirname(self):
@@ -1089,11 +1097,6 @@ class Document2(models.Model):
   @property
   def is_directory(self):
     return self.type == 'directory'
-
-  @property
-  def is_trashed(self):
-    dirs = self.path.split('/')
-    return len(dirs) > 1 and dirs[1] == '.Trash'
 
   @property
   def is_home_directory(self):
@@ -1132,7 +1135,7 @@ class Document2(models.Model):
       elif self.type == 'oozie-bundle2':
         url = reverse('oozie:edit_bundle') + '?bundle=' + str(self.id)
       elif self.type.startswith('query'):
-        url = reverse('notebook:editor') + '?editor=' + str(self.id)
+        url = '/editor' + '?editor=' + str(self.id)
       elif self.type == 'directory':
         url = '/home2' + '?uuid=' + self.uuid
       elif self.type == 'notebook':
@@ -1153,7 +1156,7 @@ class Document2(models.Model):
     return {
       'owner': self.owner.username,
       'name': self.name,
-      'path': urlencode(self.path or '/'),
+      'path': self.path or '/',
       'description': self.description,
       'uuid': self.uuid,
       'id': self.id,
@@ -1201,11 +1204,6 @@ class Document2(models.Model):
     self.inherit_permissions()
 
   def validate(self):
-    # Validate document name
-    invalid_chars = re.findall(re.compile(DOC2_NAME_INVALID_CHARS), self.name)
-    if invalid_chars:
-      raise FilesystemException(_('Document %s contains some special characters: %s') % (self.name, ', '.join(invalid_chars)))
-
     # Validate home and Trash directories are only created once per user and cannot be created or modified after
     if self.name in [Document2.HOME_DIR, Document2.TRASH_DIR] and self.type == 'directory' and \
           Document2.objects.filter(name=self.name, owner=self.owner, type='directory').exists():
@@ -1238,6 +1236,12 @@ class Document2(models.Model):
     try:
       trash_dir = Directory.objects.get(name=self.TRASH_DIR, owner=self.owner)
       self.move(trash_dir, self.owner)
+      self.is_trashed = True
+      self.save()
+
+      if self.is_directory:
+        children_ids = self._get_child_ids_recursively(self.id)
+        Document2.objects.filter(id__in=children_ids).update(is_trashed=True)
     except Document2.MultipleObjectsReturned:
       LOG.error('Multiple Trash directories detected. Merging all into one.')
 
@@ -1249,7 +1253,28 @@ class Document2(models.Model):
 
       self.move(parent_trash_dir, self.owner)
 
-  # TODO: restore
+  def restore(self):
+    # Currently restoring any doucment to /home
+    home_dir = Document2.objects.get_home_directory(self.owner)
+    self.move(home_dir, self.owner)
+    self.is_trashed = False
+    self.save()
+
+    if self.is_directory:
+      children_ids = self._get_child_ids_recursively(self.id)
+      Document2.objects.filter(id__in=children_ids).update(is_trashed=False)
+
+  def _get_child_ids_recursively(self, directory_id):
+    """
+    Returns the list of all children ids for a given directory id recursively, excluding history documents
+    """
+    directory = Directory.objects.get(id=directory_id)
+    children_ids = []
+    for child in directory.children.filter(is_history=False).filter(is_managed=False):
+      children_ids.append(child.id)
+      if child.is_directory:
+        children_ids.extend(self._get_child_ids_recursively(child.id))
+    return children_ids
 
   def can_read(self, user):
     perm = self.get_permission('read')
@@ -1416,8 +1441,7 @@ class Directory(Document2):
     documents = documents.exclude(is_history=True).exclude(is_managed=True)
 
     # Excluding all trashed docs across users
-    trashed_ids = [doc.id for doc in documents if Document2.TRASH_DIR in doc.parent_directory.path]
-    documents = documents.exclude(id__in=trashed_ids)
+    documents = documents.exclude(is_trashed=True)
 
     # Optimizing roll up for /home by checking only with directories instead of all documents
     # For all other directories roll up is done in _filter_documents()
@@ -1476,6 +1500,254 @@ class Document2Permission(models.Model):
     Returns true if the given user has permissions based on users, groups, or all flag
     """
     return self.groups.filter(id__in=user.groups.all()).exists() or user in self.users.all()
+
+
+class ClusterConfig():
+
+  def __init__(self, user, apps=None):
+    self.user = user
+    self.apps = appmanager.get_apps_dict(self.user) if apps is None else apps
+
+
+  def refreshConfig(self):
+    # TODO: reload "some ini sections"
+    pass
+
+
+  @property
+  def main_quick_action(self):
+    apps = self.get_apps()
+    if not apps:
+      raise PopupException(_('No permission to any app.'))
+
+    default_app = apps.values()[0]
+    default_interpreter = default_app.get('interpreters')
+
+    try:
+      user_default_app = json.loads(UserPreferences.objects.get(user=self.user, key='default_app').value)
+      if apps.get(user_default_app['app']):
+        default_app = self.get_apps()[user_default_app['app']]
+        if default_app.get('interpreters'):
+          interpreters = [interpreter for interpreter in default_app['interpreters'] if interpreter['type'] == user_default_app['interpreter']]
+          if interpreters:
+            default_interpreter = interpreters
+    except UserPreferences.DoesNotExist:
+      pass
+    except Exception:
+      LOG.exception('Could not load back default app')
+
+    if default_interpreter:
+      return default_interpreter[0]
+    else:
+      return default_app
+
+
+  def _get_editor(self):
+    interpreters = []
+
+    if SHOW_NOTEBOOKS.get():
+      interpreters.append({
+        'name': 'notebook',
+        'type': 'notebook',
+        'displayName': 'Notebook',
+        'tooltip': _('Notebook'),
+        'page': '/notebook'
+      })
+
+    for interpreter in get_ordered_interpreters(self.user):
+      interpreters.append({
+        'name': interpreter['name'],
+        'type': interpreter['type'],
+        'displayName': interpreter['type'].title(),
+        'tooltip': _('%s Query') % interpreter['type'].title(),
+        'page': '/editor/?type=%(type)s' % interpreter,
+      })
+
+    if interpreters:
+      return {
+        'name': 'editor',
+        'displayName': _('Editor'),
+        'interpreters': interpreters,
+        'page': interpreters[0]['page']
+      }
+    else:
+      return None
+
+  def _get_dashboard(self):
+    interpreters = [] # TODO Integrate SQL Dashboards and Solr 6 configs
+
+    if IS_DASHBOARD_ENABLED.get():
+      return {
+        'name': 'dashboard',
+        'displayName': _('Dashboard'),
+        'interpreters': interpreters,
+        'page': '/dashboard/new_search'
+      }
+    else:
+      return None
+
+  def _get_browser(self):
+    interpreters = []
+
+    if 'filebrowser' in self.apps:
+      interpreters.append({
+        'type': 'hdfs',
+        'displayName': _('Files'),
+        'tooltip': _('Files'),
+        'page': '/filebrowser/'
+      })
+
+    if is_s3_enabled() and has_s3_access(self.user):
+      interpreters.append({
+        'type': 's3',
+        'displayName': _('S3'),
+        'tooltip': _('S3'),
+        'page': '/filebrowser/view=S3A://'
+      })
+
+    if 'metastore' in self.apps:
+      interpreters.append({
+        'type': 'tables',
+        'displayName': _('Tables'),
+        'tooltip': _('Tables'),
+        'page': '/metastore/tables'
+      })
+
+    if 'search' in self.apps:
+      interpreters.append({
+        'type': 'indexes',
+        'displayName': _('Indexes'),
+        'tooltip': _('Indexes'),
+        'page': '/indexer/'
+      })
+
+    if 'jobbrowser' in self.apps:
+      from hadoop.cluster import get_default_yarncluster # Circular loop
+      if get_default_yarncluster():
+        interpreters.append({
+          'type': 'yarn',
+          'displayName': _('Jobs'),
+          'tooltip': _('Jobs'),
+          'page': '/jobbrowser/'
+        })
+
+    if 'hbase' in self.apps:
+      interpreters.append({
+        'type': 'hbase',
+        'displayName': _('HBase'),
+        'tooltip': _('HBase'),
+        'page': '/hbase/'
+      })
+
+    if 'security' in self.apps:
+      interpreters.append({
+        'type': 'security',
+        'displayName': _('Security'),
+        'tooltip': _('Security'),
+        'page': '/security/hive'
+      })
+
+    if 'sqoop' in self.apps:
+      interpreters.append({
+        'type': 'sqoop',
+        'displayName': _('Sqoop'),
+        'tooltip': _('Sqoop'),
+        'page': '/sqoop'
+      })
+
+    if interpreters:
+      return {
+          'name': 'browser',
+          'displayName': _('Browsers'),
+          'interpreters': interpreters,
+          'interpreter_names': [interpreter['type'] for interpreter in interpreters],
+        }
+    else:
+      return None
+
+
+  def _get_scheduler(self):
+    interpreters = [{
+        'type': 'oozie-workflow',
+        'displayName': _('Workflow'),
+        'tooltip': _('Workflow'),
+        'page': '/oozie/editor/workflow/new/'
+      }, {
+        'type': 'oozie-coordinator',
+        'displayName': _('Schedule'),
+        'tooltip': _('Schedule'),
+        'page': '/oozie/editor/coordinator/new/'
+      }, {
+        'type': 'oozie-bundle',
+        'displayName': _('Bundle'),
+        'tooltip': _('Bundle'),
+        'page': '/oozie/editor/bundle/new/'
+      }
+    ]
+
+    if 'oozie' in self.apps and not self.user.has_hue_permission(action="disable_editor_access", app="oozie") or self.user.is_superuser:
+      return {
+          'name': 'oozie',
+          'displayName': _('Scheduler'),
+          'interpreters': interpreters,
+          'page': interpreters[0]['page']
+        }
+    else:
+      return None
+
+
+  def _get_sdk_apps(self):
+    current_app, other_apps, apps_list = _get_apps(self.user)
+
+    interpreters = []
+
+    for other in other_apps:
+      interpreters.push({
+        'type': other.nice_name,
+        'displayName': other.nice_name,
+        'tooltip': other.nice_name,
+        'page': '/%s' % other.nice_name
+      })
+
+    if interpreters:
+      return {
+          'name': 'other',
+          'displayName': _('Other Apps'),
+          'interpreters': interpreters,
+        }
+    else:
+      return None
+
+
+  def get_apps(self):
+    apps = OrderedDict([app for app in [
+      ('editor', self._get_editor()),
+      ('dashboard', self._get_dashboard()),
+      ('browser', self._get_browser()),
+      ('scheduler', self._get_scheduler()),
+      ('sdkapps', self._get_sdk_apps()),
+    ] if app[1]])
+
+    return apps
+
+
+def _get_apps(user, section=None):
+  current_app = None
+  other_apps = []
+  if user.is_authenticated():
+    apps = appmanager.get_apps(user)
+    apps_list = appmanager.get_apps_dict(user)
+    for app in apps:
+      if app.display_name not in [
+          'beeswax', 'impala', 'pig', 'jobsub', 'jobbrowser', 'metastore', 'hbase', 'sqoop', 'oozie', 'filebrowser',
+          'useradmin', 'search', 'help', 'about', 'zookeeper', 'proxy', 'rdbms', 'spark', 'indexer', 'security', 'notebook'] and app.menu_index != -1:
+        other_apps.append(app)
+      if section == app.display_name:
+        current_app = app
+  else:
+    apps_list = []
+
+  return current_app, other_apps, apps_list
 
 
 def get_data_link(meta):

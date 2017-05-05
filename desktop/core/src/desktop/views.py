@@ -44,19 +44,19 @@ from notebook.conf import get_ordered_interpreters
 import desktop.conf
 import desktop.log.log_buffer
 
+from desktop import appmanager
 from desktop.api import massaged_tags_for_json, massaged_documents_for_json, _get_docs
-from desktop.conf import USE_NEW_EDITOR
-from desktop.converters import DocumentConverter
+
+from desktop.conf import USE_NEW_EDITOR, IS_HUE_4, HUE_LOAD_BALANCER
 from desktop.lib import django_mako
 from desktop.lib.conf import GLOBAL_CONFIG, BoundConfig
-from desktop.lib.django_util import JsonResponse, login_notrequired, render_json, render
+from desktop.lib.django_util import JsonResponse, login_notrequired, render
 from desktop.lib.i18n import smart_str
 from desktop.lib.paths import get_desktop_root
 from desktop.lib.thread_util import dump_traceback
 from desktop.log.access import access_log_level, access_warn
 from desktop.log import set_all_debug as _set_all_debug, reset_all_debug as _reset_all_debug, get_all_debug as _get_all_debug
-from desktop.models import UserPreferences, Settings, hue_version
-from desktop import appmanager
+from desktop.models import Settings, hue_version, ClusterConfig, _get_apps, UserPreferences
 
 
 LOG = logging.getLogger(__name__)
@@ -67,12 +67,11 @@ def is_alive(request):
   return HttpResponse('')
 
 
-def responsive(request):
+def hue(request):
   apps = appmanager.get_apps_dict(request.user)
 
-  return render('responsive.mako', request, {
+  return render('hue.mako', request, {
     'apps': apps,
-    'tours_and_tutorials': Settings.get_settings().tours_and_tutorials,
     'interpreters': get_ordered_interpreters(request.user),
     'is_s3_enabled': is_s3_enabled() and has_s3_access(request.user),
     'is_ldap_setup': 'desktop.auth.backend.LdapBackend' in desktop.conf.AUTH.BACKEND.get(),
@@ -80,7 +79,9 @@ def responsive(request):
       'layer': desktop.conf.LEAFLET_TILE_LAYER.get(),
       'attribution': desktop.conf.LEAFLET_TILE_LAYER_ATTRIBUTION.get()
     },
-    'is_demo': desktop.conf.DEMO_ENABLED.get()
+    'is_demo': desktop.conf.DEMO_ENABLED.get(),
+    'banner_message': get_banner_message(request),
+    'cluster_config': ClusterConfig(request.user)
   })
 
 def ko_editor(request):
@@ -88,7 +89,6 @@ def ko_editor(request):
 
   return render('ko_editor.mako', request, {
     'apps': apps,
-    'tours_and_tutorials': Settings.get_settings().tours_and_tutorials
   })
 
 def ko_metastore(request):
@@ -96,7 +96,6 @@ def ko_metastore(request):
 
   return render('ko_metastore.mako', request, {
     'apps': apps,
-    'tours_and_tutorials': Settings.get_settings().tours_and_tutorials
   })
 
 def home(request):
@@ -108,30 +107,32 @@ def home(request):
     'apps': apps,
     'json_documents': json.dumps(massaged_documents_for_json(docs, request.user)),
     'json_tags': json.dumps(massaged_tags_for_json(docs, request.user)),
-    'tours_and_tutorials': Settings.get_settings().tours_and_tutorials
   })
 
 
 def home2(request, is_embeddable=False):
-  try:
-    converter = DocumentConverter(request.user)
-    converter.convert()
-  except Exception, e:
-    LOG.warning("Failed to convert and import documents: %s" % e)
-
   apps = appmanager.get_apps_dict(request.user)
 
-  template = 'home2.mako'
-  if is_embeddable:
-    template = 'home_embeddable.mako'
-
-  return render(template, request, {
+  return render('home2.mako', request, {
     'apps': apps,
-    'tours_and_tutorials': Settings.get_settings().tours_and_tutorials
+    'is_embeddable': request.GET.get('is_embeddable', False)
   })
+
 
 def home_embeddable(request):
   return home2(request, True)
+
+
+def not_found(request):
+  return render('404.mako', request, {
+    'is_embeddable': request.GET.get('is_embeddable', False)
+  })
+
+
+def server_error(request):
+  return render('500.mako', request, {
+    'is_embeddable': request.GET.get('is_embeddable', False)
+  })
 
 
 @access_log_level(logging.WARN)
@@ -148,9 +149,9 @@ def log_view(request):
   l = logging.getLogger()
   for h in l.handlers:
     if isinstance(h, desktop.log.log_buffer.FixedBufferHandler):
-      return render('logs.mako', request, dict(log=[l for l in h.buf], query=request.GET.get("q", ""), hostname=hostname))
+      return render('logs.mako', request, dict(log=[l for l in h.buf], query=request.GET.get("q", ""), hostname=hostname, is_embeddable=request.GET.get('is_embeddable', False)))
 
-  return render('logs.mako', request, dict(log=[_("No logs found!")], query='', hostname=hostname))
+  return render('logs.mako', request, dict(log=[_("No logs found!")], query='', hostname=hostname, is_embeddable=request.GET.get('is_embeddable', False)))
 
 @access_log_level(logging.WARN)
 def download_log_view(request):
@@ -191,37 +192,7 @@ def download_log_view(request):
         LOG.exception("Couldn't construct zip file to write logs")
         return log_view(request)
 
-  return render_to_response("logs.mako", dict(log=[_("No logs found.")]))
-
-
-@access_log_level(logging.DEBUG)
-def prefs(request, key=None):
-  """Get or set preferences."""
-  if key is None:
-    d = dict( (x.key, x.value) for x in UserPreferences.objects.filter(user=request.user))
-    return render_json(d)
-  else:
-    if "set" in request.REQUEST:
-      try:
-        x = UserPreferences.objects.get(user=request.user, key=key)
-      except UserPreferences.DoesNotExist:
-        x = UserPreferences(user=request.user, key=key)
-      x.value = request.REQUEST["set"]
-      x.save()
-      return render_json(True)
-    if "delete" in request.REQUEST:
-      try:
-        x = UserPreferences.objects.get(user=request.user, key=key)
-        x.delete()
-        return render_json(True)
-      except UserPreferences.DoesNotExist:
-        return render_json(False)
-    else:
-      try:
-        x = UserPreferences.objects.get(user=request.user, key=key)
-        return render_json(x.value)
-      except UserPreferences.DoesNotExist:
-        return render_json(None)
+  return render_to_response("logs.mako", dict(log=[_("No logs found.")], is_embeddable=request.GET.get('is_embeddable', False)))
 
 
 def bootstrap(request):
@@ -281,6 +252,7 @@ def dump_config(request):
     show_private=show_private,
     top_level=top_level,
     conf_dir=conf_dir,
+    is_embeddable=request.GET.get('is_embeddable', False),
     apps=apps))
 
 @access_log_level(logging.WARN)
@@ -333,6 +305,7 @@ def memory(request):
       heap = heap[int(command[3])]
   return HttpResponse(str(heap), content_type="text/plain")
 
+@login_notrequired
 def jasmine(request):
   return render('jasmine.mako', request, None)
 
@@ -344,10 +317,20 @@ def unsupported(request):
   return render('unsupported.mako', request, None)
 
 def index(request):
-  if request.user.is_superuser and request.COOKIES.get('hueLandingPage') != 'home':
+  is_hue_4 = IS_HUE_4.get()
+  if is_hue_4:
+    try:
+      user_hue_version = json.loads(UserPreferences.objects.get(user=request.user, key='hue_version').value)
+      is_hue_4 = user_hue_version >= 4
+    except UserPreferences.DoesNotExist:
+      pass
+
+  if request.user.is_superuser and request.COOKIES.get('hueLandingPage') != 'home' and not IS_HUE_4.get():
     return redirect(reverse('about:index'))
   else:
-    if USE_NEW_EDITOR.get():
+    if is_hue_4:
+      return redirect('desktop.views.hue')
+    elif USE_NEW_EDITOR.get():
       return home2(request)
     else:
       return home(request)
@@ -428,20 +411,7 @@ def commonheader(title, section, user, request=None, padding="90px", skip_topbar
   """
   Returns the rendered common header
   """
-  current_app = None
-  other_apps = []
-  if user.is_authenticated():
-    apps = appmanager.get_apps(user)
-    apps_list = appmanager.get_apps_dict(user)
-    for app in apps:
-      if app.display_name not in [
-          'beeswax', 'impala', 'pig', 'jobsub', 'jobbrowser', 'metastore', 'hbase', 'sqoop', 'oozie', 'filebrowser',
-          'useradmin', 'search', 'help', 'about', 'zookeeper', 'proxy', 'rdbms', 'spark', 'indexer', 'security', 'notebook'] and app.menu_index != -1:
-        other_apps.append(app)
-      if section == app.display_name:
-        current_app = app
-  else:
-    apps_list = []
+  current_app, other_apps, apps_list = _get_apps(user, section)
 
   template = 'common_header.mako'
   if is_mobile:
@@ -464,8 +434,19 @@ def commonheader(title, section, user, request=None, padding="90px", skip_topbar
     },
     'is_demo': desktop.conf.DEMO_ENABLED.get(),
     'is_ldap_setup': 'desktop.auth.backend.LdapBackend' in desktop.conf.AUTH.BACKEND.get(),
-    'is_s3_enabled': is_s3_enabled() and has_s3_access(user)
+    'is_s3_enabled': is_s3_enabled() and has_s3_access(user),
+    'banner_message': get_banner_message(request)
   })
+
+def get_banner_message(request):
+  banner_message = None
+  forwarded_host = request.META.get('HTTP_X_FORWARDED_HOST')
+
+  if HUE_LOAD_BALANCER.get() and (not forwarded_host or not any(forwarded_host in lb for lb in HUE_LOAD_BALANCER.get())):
+    banner_message = '<div style="padding: 4px; text-align: center; background-color: #003F6C; height: 24px; color: #DBE8F1">%s: %s</div>' % \
+      (_('You are accessing a non-optimized Hue, please switch to one of the available addresses'),
+      ", ".join(['<a href="%s" style="color: #FFF; font-weight: bold">%s</a>' % (host, host) for host in HUE_LOAD_BALANCER.get()]))
+  return banner_message
 
 def commonshare():
   return django_mako.render_to_string("common_share.mako", {})
@@ -503,7 +484,6 @@ def commonfooter(request, messages=None, is_mobile=False):
     'messages': messages,
     'version': hue_version(),
     'collect_usage': collect_usage(),
-    'tours_and_tutorials': hue_settings.tours_and_tutorials
   })
 
 

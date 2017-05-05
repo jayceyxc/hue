@@ -130,8 +130,8 @@ ${ layout.menubar(section='saved queries') }
     ${ csrf_token(request) | n,unicode }
     <input type="hidden" name="skipTrash" id="skipTrash" value="false"/>
     <div class="modal-header">
-      <a href="#" class="close" data-dismiss="modal">&times;</a>
-      <h3 id="deleteQueryMessage">${_('Confirm action')}</h3>
+      <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+      <h2 id="deleteQueryMessage" class="modal-title">${ _('Confirm action') }</h2>
     </div>
     <div class="modal-footer">
       <input type="button" class="btn" data-dismiss="modal" value="${_('Cancel')}" />
@@ -143,7 +143,7 @@ ${ layout.menubar(section='saved queries') }
   </form>
 </div>
 
-<script type="text/javascript" charset="utf-8">
+<script type="text/javascript">
   $(document).ready(function () {
     var viewModel = {
         availableSavedQueries : ko.observableArray(${ designs_json | n }),

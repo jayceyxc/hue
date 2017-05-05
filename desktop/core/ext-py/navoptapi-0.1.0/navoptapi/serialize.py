@@ -15,9 +15,9 @@
 # language governing permissions and limitations under the License.
 
 try:
-  from collections import OrderedDict
+    from collections import OrderedDict
 except ImportError:
-  from ordereddict import OrderedDict # Python 2.6
+    from ordereddict import OrderedDict  # Python 2.6
 import json
 
 
@@ -30,10 +30,6 @@ class Serializer(object):
             (k, v) for k, v in parameters.items() if v is not None)
 
         serialized = {}
-        # serialized['method'] = operation_model.http['method']
-        # serialized['headers'] = {'Content-Type': 'application/json'}
-        # serialized['url_path'] = operation_model.http['requestUri']
-
         serialized_body = OrderedDict()
         if len(filtered_parameters) != 0:
             self._serialize(serialized_body, filtered_parameters, None)
@@ -43,8 +39,6 @@ class Serializer(object):
         return serialized
 
     def _serialize(self, serialized, value, shape, key=None):
-        # serialize_method_name = '_serialize_type_%s' % shape.type_name
-        # method = getattr(self, serialize_method_name, self._default_serialize)
         self._default_serialize(serialized, value, shape, key)
 
     def _serialize_type_object(self, serialized, value, shape, key):

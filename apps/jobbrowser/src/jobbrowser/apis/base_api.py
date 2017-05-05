@@ -16,6 +16,7 @@
 # limitations under the License.
 
 import logging
+import re
 
 from django.utils.translation import ugettext as _
 
@@ -26,41 +27,65 @@ LOG = logging.getLogger(__name__)
 
 
 def get_api(user, interface):
-  from jobbrowser.apis.workflow_api import WorkflowApi
-  from jobbrowser.apis.job_api import YarnApi
+  from jobbrowser.apis.bundle_api import BundleApi
+  from jobbrowser.apis.job_api import JobApi
   from jobbrowser.apis.schedule_api import ScheduleApi
+  from jobbrowser.apis.workflow_api import WorkflowApi
 
-  if interface == 'apps':
-    return YarnApi(user)
+  if interface == 'jobs':
+    return JobApi(user)
   elif interface == 'workflows':
     return WorkflowApi(user)
   elif interface == 'schedules':
     return ScheduleApi(user)
+  elif interface == 'bundles':
+    return BundleApi(user)
   else:
     raise PopupException(_('Interface %s is unknown') % interface)
 
 
-class Api():
+class Api(object):
 
   def __init__(self, user):
     self.user = user
+    self.request = None
 
-  def apps(self): return []
+  def apps(self, filters): return []
 
-  def app(self, appid): return {}
+  def app(self, appid): return {} # Also contains progress (0-100) and status [RUNNING, FINISHED, PAUSED]
 
-  def action(self, appid): return {} # Kill, suspend...
+  def action(self, app_ids, operation): return {}
 
-  def status(self, appid): return {'status': 'RUNNING'}
+  def logs(self, appid, app_type, log_name): return {'progress': 0, 'logs': ''}
 
-  def logs(self, appid, app_type): return {'progress': 0, 'logs': {'default': ''}}
+  def profile(self, appid, app_type, app_property, app_filters): return {} # Tasks, XML, counters...
 
-  def profile(self, appid, app_type, property): return {} # Tasks, XML, counters...
+  def _set_request(self, request):
+    self.request = request
 
 
 class MockDjangoRequest():
 
-  def __init__(self, user):
+  def __init__(self, user, get=None, post=None, method='POST'):
     self.user = user
     self.jt = None
-    self.GET = {'format': 'json', 'is_jb2': True}
+    self.GET = get if get is not None else {'format': 'json'}
+    self.POST = post if post is not None else {}
+    self.REQUEST = {}
+    self.method = method
+
+
+def _extract_query_params(filters):
+  filter_params = {}
+
+  for name, value in filters.iteritems():
+    if name == 'text':
+      filter_params['text'] = value
+      user_filter = re.search('((user):([^ ]+))', value)
+      if user_filter:
+        filter_params['username'] = user_filter.group(3)
+        filter_params['text'] = filter_params['text'].replace(user_filter.group(1), '').strip()
+    else:
+      filter_params[name] = value
+
+  return filter_params

@@ -34,7 +34,7 @@ ${ components.menubar(hiveserver2_impersonation_enabled) }
     <%def name="search()">
       ${_('Username')} <input id="userFilter" type="text" class="input-medium search-query" placeholder="${_('Search for username')}" value="${ user_filter or '' }">
       &nbsp;&nbsp;${_('Text')} <input id="textFilter" type="text" class="input-xlarge search-query" placeholder="${_('Search for text')}" value="${ text_filter or '' }">
-      <img id="loading" src="${ static('desktop/art/spinner.gif') }" />
+        <span id="loading"><i class="fa fa-spinner fa-spin"></i></span>
     </%def>
 
     <%def name="creation()">
@@ -54,8 +54,8 @@ ${ components.menubar(hiveserver2_impersonation_enabled) }
         <a class="btn btn-status btn-danger disable-feedback" data-value="failed">${ _('Failed') }</a>
         <a class="btn btn-status btn-inverse disable-feedback" data-value="killed">${ _('Killed') }</a>
       </span>
-      &nbsp;&nbsp;${_('in last')} <input id="timeValue" class="input-mini" type="number" value="7" min="1" max="3650">
-      <select id="timeUnit" class="input-small">
+      &nbsp;&nbsp;${_('in the last')} <input id="timeValue" class="input-mini no-margin" type="number" value="7" min="1" max="3650">
+      <select id="timeUnit" class="input-small no-margin">
         <option value="days">${_('days')}</option>
         <option value="hours">${_('hours')}</option>
         <option value="minutes">${_('minutes')}</option>
@@ -92,8 +92,8 @@ ${ components.menubar(hiveserver2_impersonation_enabled) }
 
 <div id="killModal" class="modal hide fade">
   <div class="modal-header">
-    <a href="#" class="close" data-dismiss="modal">&times;</a>
-    <h3>${_('Confirm Kill')}</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${_('Confirm Kill')}</h2>
   </div>
   <div class="modal-body">
     <p>${_('Are you sure you want to kill this job?')}</p>
@@ -107,7 +107,7 @@ ${ components.menubar(hiveserver2_impersonation_enabled) }
 <script src="${ static('desktop/ext/js/datatables-paging-0.1.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('jobbrowser/js/utils.js') }" type="text/javascript" charset="utf-8"></script>
 
-<script type="text/javascript" charset="utf-8">
+<script type="text/javascript">
 
   $(document).ready(function () {
 
@@ -298,6 +298,13 @@ ${ components.menubar(hiveserver2_impersonation_enabled) }
       });
     }
 
+    function validTimeValue() {
+      var numberValue = parseInt($("#timeValue").val().trim());
+      return $("#timeValue").val().trim() != "" && !isNaN(numberValue) && 1 <= numberValue && numberValue <= 3650;
+    }
+
+    var lastTimeValue = null;
+
     function callJsonData(callback, justRunning) {
       var _url_params = {"format": "json"};
 
@@ -325,8 +332,9 @@ ${ components.menubar(hiveserver2_impersonation_enabled) }
         _url_params["text"] = $('#textFilter').val().trim();
       }
 
-      if ($("#timeValue").val().trim() != "") {
-        _url_params["time_value"] = $('#timeValue').val().trim();
+      if (validTimeValue()) {
+        _url_params["time_value"] = parseInt($('#timeValue').val().trim());
+        lastTimeValue = $('#timeValue').val();
         _url_params["time_unit"] = $('#timeUnit :selected').text();
       }
 
@@ -342,14 +350,20 @@ ${ components.menubar(hiveserver2_impersonation_enabled) }
       callJsonData(populateTable);
     });
 
+
+
     $("#timeValue").jHueDelayedInput(function(){
-      $("#loading").removeClass("hide");
-      callJsonData(populateTable);
+      if (validTimeValue() && lastTimeValue !== $('#timeValue').val()) {
+        $("#loading").removeClass("hide");
+        callJsonData(populateTable);
+      }
     });
 
     $("#timeValue").change(function(){
-      $("#loading").removeClass("hide");
-      callJsonData(populateTable);
+      if (validTimeValue() && lastTimeValue !== $('#timeValue').val()) {
+        $("#loading").removeClass("hide");
+        callJsonData(populateTable);
+      }
     });
 
     $("#showRetired").change(function () {

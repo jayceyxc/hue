@@ -30,11 +30,8 @@ ${ commonheader(_("Create database"), 'metastore', user, request) | n,unicode }
 ${layout.metastore_menubar()}
 
 <script src="${ static('desktop/ext/js/jquery/plugins/jquery-ui-1.10.4.custom.min.js') }"></script>
-<script src="${ static('desktop/js/jquery.huedatatable.js') }"></script>
-<script src="${ static('desktop/ext/js/d3.v3.js') }" type="text/javascript" charset="utf-8"></script>
-<script src="${ static('desktop/ext/js/routie-0.3.0.min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/js/hue.routie.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/selectize.min.js') }"></script>
-<script src="${ static('desktop/js/apiHelper.js') }"></script>
 <script src="${ static('metastore/js/metastore.ko.js') }"></script>
 <script src="${ static('desktop/js/ko.charts.js') }"></script>
 <script src="${ static('desktop/ext/js/knockout-sortable.min.js') }"></script>
@@ -76,10 +73,6 @@ ${ assist.assistPanel() }
               params: {
                 user: '${user.username}',
                 sql : {
-                  sourceTypes: [{
-                    name: 'hive',
-                    type: 'hive'
-                  }],
                   navigationSettings: {
                     openItem: false,
                     showStats: true
@@ -194,8 +187,8 @@ ${ assist.assistPanel() }
 
 <div id="chooseFile" class="modal hide fade">
     <div class="modal-header">
-        <a href="#" class="close" data-dismiss="modal">&times;</a>
-        <h3>${_('Choose a file')}</h3>
+      <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+      <h2 class="modal-title">${ _('Choose a file') }</h2>
     </div>
     <div class="modal-body">
         <div id="filechooser">
@@ -239,20 +232,19 @@ ${ assist.assistPanel() }
 
 </div>
 
-<script type="text/javascript" charset="utf-8">
+<script type="text/javascript">
 
   (function () {
 
     ko.options.deferUpdates = true;
 
-    function MetastoreViewModel(options) {
+    function CreateDatabaseViewModel() {
       var self = this;
-      self.apiHelper = ApiHelper.getInstance(options);
+      self.apiHelper = ApiHelper.getInstance();
 
       self.assistAvailable = ko.observable(true);
       self.isLeftPanelVisible = ko.observable();
       self.apiHelper.withTotalStorage('assist', 'assist_panel_visible', self.isLeftPanelVisible, true);
-
 
       huePubSub.subscribe("assist.table.selected", function (tableDef) {
         location.href = '/metastore/table/' + tableDef.database + '/' + tableDef.name;
@@ -264,16 +256,7 @@ ${ assist.assistPanel() }
     }
 
     $(document).ready(function () {
-
-      var options = {
-        user: '${ user.username }',
-        i18n: {
-          errorLoadingDatabases: "${ _('There was a problem loading the databases') }",
-          errorLoadingTablePreview: "${ _('There was a problem loading the table preview.') }"
-        }
-      };
-
-      var viewModel = new MetastoreViewModel(options);
+      var viewModel = new CreateDatabaseViewModel();
 
       ko.applyBindings(viewModel);
 

@@ -49,24 +49,24 @@ def is_selected(section, matcher):
 
 
 <%def name="menubar(section='')">
-  <div class="navbar navbar-inverse navbar-fixed-top">
+  <div class="navbar hue-title-bar">
       <div class="navbar-inner">
         <div class="container-fluid">
           <div class="nav-collapse">
             <ul class="nav">
-              <li class="currentApp">
+              <li class="app-header">
                 <a href="/${app_name}">
-                  <img src="${ static('useradmin/art/icon_useradmin_48.png') }" class="app-icon" />
+                  <img src="${ static('useradmin/art/icon_useradmin_48.png') }" class="app-icon" alt="${ _('User admin icon') }" />
                   ${ _('User Admin') }
                 </a>
               </li>
               %if user.is_superuser:
-              <li class="${is_selected(section, 'users')}"><a href="/useradmin/users">${_('Users')}</a></li>
-              <li class="${is_selected(section, 'groups')}"><a href="/useradmin/groups">${_('Groups')}</a></li>
-              <li class="${is_selected(section, 'permissions')}"><a href="/useradmin/permissions">${_('Permissions')}</a></li>
-              %if conf.USE_DEFAULT_CONFIGURATION.get():
-              <li class="${is_selected(section, 'configurations')}"><a href="/useradmin/configurations">${_('Configurations')}</a></li>
-              %endif
+                <li class="${is_selected(section, 'users')}"><a href="${ url('useradmin.views.list_users') }">${_('Users')}</a></li>
+                <li class="${is_selected(section, 'groups')}"><a href="${ url('useradmin.views.list_groups') }">${_('Groups')}</a></li>
+                <li class="${is_selected(section, 'permissions')}"><a href="${ url('useradmin.views.list_permissions') }">${_('Permissions')}</a></li>
+                %if conf.USE_DEFAULT_CONFIGURATION.get():
+                <li class="${is_selected(section, 'configurations')}"><a href="${ url('useradmin.views.list_configurations') }">${_('Configurations')}</a></li>
+                %endif
               %endif
             </ul>
           </div>
@@ -78,19 +78,4 @@ def is_selected(section, matcher):
 
 <%def name="commons()">
   <link href="${ static('useradmin/css/useradmin.css') }" rel="stylesheet">
-
-  <script type="text/javascript">
-    $(document).ready(function () {
-
-      $("#filterInput").jHueDelayedInput(function () {
-        if (mainDataTable) {
-          mainDataTable.fnFilter($("#filterInput").val().toLowerCase());
-        }
-      });
-
-      $('[data-rel="tooltip"]').tooltip({
-        placement: 'right'
-      });
-    });
-  </script>
 </%def>

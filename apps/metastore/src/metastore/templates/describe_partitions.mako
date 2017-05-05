@@ -27,10 +27,7 @@ ${ commonheader(_('Table Partitions: %(tableName)s') % dict(tableName=table.name
 ${ components.menubar() }
 
 <script src="${ static('desktop/ext/js/jquery/plugins/jquery-ui-1.10.4.custom.min.js') }"></script>
-<script src="${ static('desktop/js/jquery.huedatatable.js') }"></script>
-<script src="${ static('desktop/ext/js/d3.v3.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/selectize.min.js') }"></script>
-<script src="${ static('desktop/js/apiHelper.js') }"></script>
 <script src="${ static('metastore/js/metastore.ko.js') }"></script>
 <script src="${ static('desktop/js/ko.charts.js') }"></script>
 <script src="${ static('desktop/ext/js/knockout-sortable.min.js') }"></script>
@@ -60,9 +57,8 @@ ${ assist.assistPanel() }
 
 
 <div class="main-content">
-  <div class="vertical-full container-fluid">
-    <div class="vertical-full">
-      <div class="vertical-full row-fluid panel-container">
+  <div class="vertical-full container-fluid" data-bind="style: { 'padding-left' : $root.isLeftPanelVisible() ? '0' : '20px' }">
+    <div class="vertical-full row-fluid panel-container">
 
         <div class="assist-container left-panel" data-bind="visible: $root.isLeftPanelVisible() && $root.assistAvailable()">
           <a title="${_('Toggle Assist')}" class="pointer hide-assist" data-bind="click: function() { $root.isLeftPanelVisible(false) }">
@@ -72,10 +68,6 @@ ${ assist.assistPanel() }
               name: 'assist-panel',
               params: {
                 sql: {
-                  sourceTypes: [{
-                    name: 'hive',
-                    type: 'hive'
-                  }],
                   user: '${user.username}',
                   navigationSettings: {
                     openItem: false,
@@ -91,7 +83,7 @@ ${ assist.assistPanel() }
         <div class="content-panel">
 
           <div class="metastore-main">
-            <h3>${ components.breadcrumbs(breadcrumbs) }</h3>
+            <h1>${ components.breadcrumbs(breadcrumbs) }</h1>
 
             <div class="row-fluid">
               <div class="span10">
@@ -128,7 +120,7 @@ ${ assist.assistPanel() }
               </div>
             </div>
 
-            <table class="table table-striped table-condensed datatables" data-bind="visible: values().length > 0, style:{'opacity': isLoading() ? '.5': '1' }">
+            <table class="table table-condensed datatables" data-bind="visible: values().length > 0, style:{'opacity': isLoading() ? '.5': '1' }">
               <tr>
                 <th width="1%"><div class="hueCheckbox selectAll fa" data-selectables="partitionCheck"></div></th>
                 <!-- ko foreach: keys -->
@@ -156,7 +148,6 @@ ${ assist.assistPanel() }
 
         </div>
       </div>
-    </div>
   </div>
 </div>
 
@@ -165,8 +156,8 @@ ${ assist.assistPanel() }
   <form id="dropPartitionForm" action="${ url('metastore:drop_partition', database=database, table=table.name) }" method="POST">
     ${ csrf_token(request) | n,unicode }
     <div class="modal-header">
-      <a href="#" class="close" data-dismiss="modal">&times;</a>
-      <h3 id="dropPartitionMessage">${_('Confirm action')}</h3>
+      <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+      <h2 id="dropPartitionMessage" class="modal-title">${_('Confirm action')}</h2>
     </div>
     <div class="modal-footer">
       <input type="button" class="btn" data-dismiss="modal" value="${_('Cancel')}" />
@@ -177,13 +168,13 @@ ${ assist.assistPanel() }
 </div>
 
 
-<script type="text/javascript" charset="utf-8">
+<script type="text/javascript">
   (function () {
     ko.options.deferUpdates = true;
 
-    function PartitionViewModel(options, partition_keys_json, partition_values_json) {
+    function PartitionViewModel(partition_keys_json, partition_values_json) {
       var self = this;
-      self.apiHelper = ApiHelper.getInstance(options);
+      self.apiHelper = ApiHelper.getInstance();
       self.assistAvailable = ko.observable(true);
       self.isLeftPanelVisible = ko.observable();
       self.apiHelper.withTotalStorage('assist', 'assist_panel_visible', self.isLeftPanelVisible, true);
@@ -260,16 +251,7 @@ ${ assist.assistPanel() }
     }
 
     $(document).ready(function () {
-
-      var options = {
-        user: '${ user.username }',
-        i18n: {
-          errorLoadingDatabases: "${ _('There was a problem loading the databases') }",
-          errorLoadingTablePreview: "${ _('There was a problem loading the table preview.') }"
-        }
-      }
-
-      var viewModel = new PartitionViewModel(options, ${ partition_keys_json | n,unicode }, ${ partition_values_json | n,unicode });
+      var viewModel = new PartitionViewModel(${ partition_keys_json | n,unicode }, ${ partition_values_json | n,unicode });
 
       ko.applyBindings(viewModel);
 

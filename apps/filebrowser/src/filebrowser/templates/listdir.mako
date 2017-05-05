@@ -55,7 +55,7 @@ ${ fb_components.menubar() }
       <%def name="actions()">
         <div class="btn-toolbar" style="display: inline; vertical-align: middle">
           <div id="ch-dropdown" class="btn-group" style="vertical-align: middle">
-            <button href="javascript: void(0)" class="btn dropdown-toggle" title="${_('Actions')}" data-toggle="dropdown"
+            <button class="btn dropdown-toggle" title="${_('Actions')}" data-toggle="dropdown"
             data-bind="visible: !inTrash(), enable: selectedFiles().length > 0 && (!isS3() || (isS3() && !isS3Root()))">
               <i class="fa fa-cog"></i> ${_('Actions')}
               <span class="caret" style="line-height: 15px"></span>
@@ -64,7 +64,7 @@ ${ fb_components.menubar() }
               <li><a href="javascript: void(0)" title="${_('Rename')}" data-bind="visible: !inTrash() && selectedFiles().length == 1, click: renameFile,
               enable: selectedFiles().length == 1 && isCurrentDirSelected().length == 0"><i class="fa fa-fw fa-font"></i>
               ${_('Rename')}</a></li>
-              <li><a href="javascript: void(0)"title="${_('Move')}" data-bind="click: move, enable: selectedFiles().length > 0 &&
+              <li><a href="javascript: void(0)" title="${_('Move')}" data-bind="click: move, enable: selectedFiles().length > 0 &&
               isCurrentDirSelected().length == 0"><i class="fa fa-fw fa-random"></i> ${_('Move')}</a></li>
               <li><a href="javascript: void(0)" title="${_('Copy')}" data-bind="click: copy, enable: selectedFiles().length > 0 &&
               isCurrentDirSelected().length == 0"><i class="fa fa-fw fa-files-o"></i> ${_('Copy')}</a></li>
@@ -94,9 +94,22 @@ ${ fb_components.menubar() }
                   <i class="fa fa-fw fa-pie-chart"></i> ${_('Summary')}
                 </a>
               </li>
+              <li>
+                <a href="javascript: void(0)" title="${_('Set Replication')}" data-bind="visible: !inTrash() && !isS3() && selectedFiles().length == 1 && selectedFile().type == 'file', click: setReplicationFactor">
+                  <i class="fa fa-fw fa-hdd-o"></i> ${_('Set replication')}
+                </a>
+              </li>
+              % if ENABLE_EXTRACT_UPLOADED_ARCHIVE.get():
+                <li><a href="javascript: void(0)" title="${_('Compress selection into a single archive')}" data-bind="click: function() { setCompressArchiveDefault(); confirmCompressFiles();}, visible: showCompressButton">
+                  <i class="fa fa-fw fa-file-archive-o"></i> ${_('Compress')}</a>
+                </li>
+                <li><a href="javascript: void(0)" title="${_('Extract selected archive')}" data-bind="visible: selectedFiles().length == 1 && isArchive() && !isS3(), click: confirmExtractArchive">
+                  <i class="fa fa-fw fa-file-archive-o"></i> ${_('Extract')}</a>
+                </li>
+              % endif
             </ul>
           </div>
-          
+
           <button class="btn fileToolbarBtn" title="${_('Restore from trash')}" data-bind="visible: inRestorableTrash(), click: restoreTrashSelected, enable: selectedFiles().length > 0 && isCurrentDirSelected().length == 0"><i class="fa fa-cloud-upload"></i> ${_('Restore')}</button>
           <!-- ko ifnot: inTrash -->
           <!-- ko if: $root.isS3 -->
@@ -117,14 +130,20 @@ ${ fb_components.menubar() }
           % if 'oozie' in apps:
             <button class="btn fileToolbarBtn" title="${_('Submit')}"
               data-bind="visible: selectedFiles().length == 1 && $.inArray(selectedFile().name, ['workflow.xml', 'coordinator.xml', 'bundle.xml']) > -1, click: submitSelected">
-              <i class="fa fa-play"></i> ${_('Submit')}
+              <i class="fa fa-fw fa-play"></i> ${_('Submit')}
             </button>
             % if ENABLE_EXTRACT_UPLOADED_ARCHIVE.get():
               <button class="btn extractArchiveBtn" title="${_('Extract')}"
-                data-bind="visible: selectedFiles().length == 1 && isArchive(), click: confirmExtractArchive">
-                <i class="fa fa-play"></i> ${_('Extract')}
+                data-bind="visible: selectedFiles().length == 1 && isArchive() && !isS3(), click: confirmExtractArchive">
+                <i class="fa fa-fw fa-file-archive-o"></i> ${_('Extract')}
               </button>
             % endif
+          % endif
+          % if 'beeswax' in apps:
+            <a class="btn" title="${_('Open in Editor')}"
+              data-bind="visible: selectedFiles().length == 1 && isSelectedFileSql(), click: openFileInEditor">
+              ${_('Open in Editor')}
+            </a>
           % endif
         </div>
       </%def>
@@ -189,8 +208,6 @@ ${ fb_components.menubar() }
 
 <div class="hoverMsg hide">
   <p class="hoverText"></p>
-</div>
-
 </div>
 
 %if not is_embeddable:

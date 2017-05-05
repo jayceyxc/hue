@@ -162,6 +162,7 @@ MIDDLEWARE_CLASSES = [
 
     'django.middleware.http.ConditionalGetMiddleware',
     'axes.middleware.FailedLoginMiddleware',
+    'desktop.middleware.MimeTypeJSFileFixStreamingMiddleware',
 ]
 
 # if os.environ.get(ENV_DESKTOP_DEBUG):
@@ -320,6 +321,7 @@ else:
     "ENGINE" : desktop.conf.DATABASE.ENGINE.get(),
     "NAME" : desktop.conf.DATABASE.NAME.get(),
     "USER" : desktop.conf.DATABASE.USER.get(),
+    "SCHEMA" : desktop.conf.DATABASE.SCHEMA.get(),
     "PASSWORD" : desktop.conf.get_database_password(),
     "HOST" : desktop.conf.DATABASE.HOST.get(),
     "PORT" : str(desktop.conf.DATABASE.PORT.get()),
@@ -329,6 +331,7 @@ else:
     "TEST_USER" : test_user,
     # Wrap each request in a transaction.
     "ATOMIC_REQUESTS" : True,
+    "CONN_MAX_AGE" : desktop.conf.DATABASE.CONN_MAX_AGE.get(),
   }
 
 DATABASES = {

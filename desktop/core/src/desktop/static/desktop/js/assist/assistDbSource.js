@@ -21,25 +21,16 @@ var AssistDbSource = (function () {
       return a.definition.name.localeCompare(b.definition.name);
     },
     creation: function (a, b) {
-      if (!a.definition.isColumn || !a.definition.isComplex) {
-        return sortFunctions.alpha(a, b);
+      if (a.definition.isColumn || a.definition.isComplex) {
+        return a.definition.index - b.definition.index;
       }
-      return a.definition.index - b.definition.index;
+      return sortFunctions.alpha(a, b);
     },
     popular: function (a, b) {
-      if (a.definition.popularity && !b.definition.popularity) {
-        return -1;
+      if (a.popularity() === b.popularity()) {
+        return sortFunctions.creation(a, b);
       }
-      if (b.definition.popularity && !a.definition.popularity) {
-        return 1;
-      }
-      if (a.definition.popularity && b.definition.popularity) {
-        if (a.definition.popularity === b.definition.popularity) {
-          return sortFunctions.creation(a, b);
-        }
-        return a.definition.popularity - b.definition.popularity
-      }
-      return sortFunctions.creation(a, b);
+      return b.popularity() - a.popularity();
     }
   };
 
@@ -130,20 +121,34 @@ var AssistDbSource = (function () {
             data.top_tables.forEach(function (topTable) {
               popularityIndex[topTable.name] = topTable.popularity;
             });
-            db.setPopularityIndex(popularityIndex);
-            if (self.activeSort() === 'popular') {
-              if (db.loading()) {
-                var subscription = db.loading.subscribe(function () {
-                  db.entries.sort(sortFunctions.popular);
-                  subscription.remove();
-                });
-              } else {
+            var applyPopularity = function () {
+              db.entries().forEach(function (entry) {
+                if (popularityIndex[entry.definition.name]) {
+                  entry.popularity(popularityIndex[entry.definition.name]);
+                }
+              });
+              if (self.activeSort() === 'popular') {
                 db.entries.sort(sortFunctions.popular);
               }
+            };
+
+            if (db.loading()) {
+              var subscription = db.loading.subscribe(function () {
+                if (subscription) {
+                  subscription.dispose();
+                }
+                applyPopularity();
+              });
+            } else {
+              applyPopularity();
             }
           }
         });
       }
+    });
+
+    huePubSub.subscribe('assist.database.get', function (callback) {
+      callback(self.selectedDatabase());
     });
 
     self.reloading = ko.observable(false);
@@ -174,15 +179,17 @@ var AssistDbSource = (function () {
     var nestedFilter = {
       query: ko.observable("").extend({ rateLimit: { timeout: 250, method: 'notifyWhenChangesStop' } }),
       showTables: ko.observable(true),
-      enableActiveFilter: self.navigationSettings.enableActiveFilter && typeof window.Worker !== 'undefined',
-      showActive: ko.observable(false),
       showViews: ko.observable(true),
       activeEditorTables: ko.observableArray([])
     };
 
-    huePubSub.subscribe('editor.active.locations', function (locations) {
+    huePubSub.subscribe('editor.active.locations', function (activeLocations) {
       var activeTables = [];
-      locations.forEach(function (location) {
+      // TODO: Test multiple snippets
+      if (self.sourceType !== activeLocations.type) {
+        return;
+      }
+      activeLocations.locations.forEach(function (location) {
         if (location.type === 'table') {
           activeTables.push(location.identifierChain.length == 2 ? { table: location.identifierChain[1].name, db: location.identifierChain[0].name} : { table: location.identifierChain[0].name });
         }
@@ -295,32 +302,48 @@ var AssistDbSource = (function () {
 
     var foundDb;
     var index;
+
     var findDatabase = function () {
       $.each(self.databases(), function (idx, db) {
+        db.highlight(false);
         if (db.databaseName === path[0]) {
           foundDb = db;
           index = idx;
         }
       });
-      if (foundDb && path.length > 1) {
+
+      if (foundDb) {
         var whenLoaded = function () {
-          self.selectedDatabase(foundDb);
-          foundDb.highlightInside(path.slice(1), []);
-          foundDb.open(true);
+          if (self.selectedDatabase() !== foundDb) {
+            self.selectedDatabase(foundDb);
+          }
+          if (!foundDb.open()) {
+            foundDb.open(true);
+          }
+          window.setTimeout(function () {
+            huePubSub.subscribeOnce('assist.db.scrollToComplete', function () {
+              foundDb.highlight(true);
+              // Timeout is for animation effect
+              window.setTimeout(function () {
+                foundDb.highlight(false);
+              }, 1800);
+            });
+            if (path.length > 1) {
+              foundDb.highlightInside(path.slice(1), []);
+            } else {
+              huePubSub.publish('assist.db.scrollTo', foundDb);
+            }
+          }, 0);
         };
+
         if (foundDb.hasEntries()) {
           whenLoaded();
         } else {
           foundDb.loadEntries(whenLoaded);
         }
-      } else if (foundDb) {
-        self.selectedDatabase(null);
-        foundDb.highlight(true);
-        window.setTimeout(function() {
-          huePubSub.publish('assist.db.scrollToHighlight');
-        }, 0)
       }
     };
+
     if (!self.loaded()) {
       self.initDatabases(findDatabase);
     } else {

@@ -20,6 +20,8 @@ from django.template.defaultfilters import urlencode, stringformat, filesizeform
 from desktop.lib.django_util import reverse_with_get, extract_field_data
 from django.utils.encoding import smart_str
 from django.utils.translation import ugettext as _
+
+from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
 %>
 
 <%namespace name="edit" file="editor_components.mako" />
@@ -40,7 +42,7 @@ from django.utils.translation import ugettext as _
     <i class="fa fa-spinner fa-spin hue-spinner-large hue-spinner-center muted"></i>
   </div>
 
-  <table class="table table-condensed datatables tablescroller-disable" data-bind="style: {'opacity': isLoading() ? '.5': '1'}">
+  <table id="fileBrowserTable" class="table table-condensed datatables tablescroller-disable" data-bind="style: {'opacity': isLoading() ? '.5': '1'}">
     <thead>
       <tr>
         <th width="1%"><div data-bind="click: selectAll, css: {hueCheckbox: true, 'fa': true, 'fa-check': allSelected}" class="select-all"></div></th>
@@ -99,8 +101,8 @@ from django.utils.translation import ugettext as _
   <!-- extract modal -->
   <div id="confirmExtractModal" class="modal hide fade">
     <div class="modal-header">
-      <a href="#" class="close" data-dismiss="modal">&times;</a>
-      <h3>${_('Extract Archive')}</h3>
+      <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+      <h2 class="modal-title">${ _('Extract Archive') }</h2>
     </div>
     <!-- ko if: selectedFile -->
     <div class="modal-body">
@@ -113,7 +115,54 @@ from django.utils.translation import ugettext as _
     </div>
     <div class="modal-footer">
       <a class="btn" data-dismiss="modal">${_('No')}</a>
-      <input type="submit" value="${_('Yes')}" class="btn btn-danger" data-bind="click: extractSelectedArchive"/>
+      <input type="submit" value="${_('Yes')}" class="btn btn-primary" data-bind="click: extractSelectedArchive"/>
+    </div>
+    <!-- /ko -->
+  </div>
+
+  <!-- compress modal -->
+  <div id="confirmCompressModal" class="modal hide fade">
+    <div class="modal-header">
+      <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+      <h2 class="modal-title">${ _('Compress Files') }</h2>
+    </div>
+    <!-- ko if: selectedFiles -->
+    <div class="modal-body">
+      <div class="form-inline">
+        <label>${_('Archive Name')} <input data-bind="textInput: compressArchiveName" type="text" class="margin-left-5 input-xlarge"></label>
+        <p class="margin-top-20">${_('Start a task to compress the selected file(s) and/or folder(s)')}</p>
+        <ul data-bind="foreach: selectedFiles()">
+          <li>
+            <i data-bind="css: { 'fa fa-fw muted': true, 'fa-file-o': type == 'file', 'fa-folder-o': type != 'file' }"></i>
+            <span data-bind="text: $data.name"> </span>
+          </li>
+        </ul>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <a class="btn" data-dismiss="modal">${_('Cancel')}</a>
+      <input type="submit" value="${_('Compress')}" class="btn btn-primary" data-bind="click: archiveOverrideWarning, enable: compressArchiveName().length > 0"/>
+    </div>
+    <!-- /ko -->
+  </div>
+
+  <!-- compress warning modal -->
+  <div id="compressWarningModal" class="modal hide fade">
+    <div class="modal-header">
+      <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+      <h2 class="modal-title">${ _('Are you sure you want to override the existing archive?') }</h2>
+    </div>
+    <!-- ko if: compressArchiveName -->
+    <div class="modal-body">
+      <ul>
+        <li>
+          <span data-bind="text: compressArchiveName"> </span>
+        </li>
+      </ul>
+    </div>
+    <div class="modal-footer">
+      <a class="btn" data-dismiss="modal" data-bind="click: confirmCompressFiles">${_('No')}</a>
+      <input type="submit" value="${_('Yes')}" class="btn btn-danger" data-bind="click: compressSelectedFiles"/>
     </div>
     <!-- /ko -->
   </div>
@@ -121,8 +170,8 @@ from django.utils.translation import ugettext as _
   <!-- delete modal -->
   <div id="deleteModal" class="modal hide fade">
     <div class="modal-header">
-      <a href="#" class="close" data-dismiss="modal">&times;</a>
-      <h3>${_('Confirm Delete')}</h3>
+      <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+      <h2 class="modal-title">${ _('Confirm Delete') }</h2>
     </div>
     <div class="modal-body">
       <!-- ko if: isS3() && isS3Root() -->
@@ -130,7 +179,12 @@ from django.utils.translation import ugettext as _
       <p class="muted">${_('Deleting a bucket will delete all of its contents and release the bucket name to be reserved by others.')}</p>
       <!-- /ko -->
       <!-- ko ifnot: isS3() && isS3Root() -->
+      <!-- ko ifnot: $root.skipTrash -->
       <p>${_('Are you sure you want to delete these files?')}</p>
+      <!-- /ko -->
+      <!-- ko if: $root.skipTrash -->
+      <p>${_('Are you sure you want to permanently delete these files?')}</p>
+      <!-- /ko -->
       <ul data-bind="foreach: $root.selectedFiles">
         <li data-bind="visible: $index() <= 10">
           <span data-bind="text: name"></span>
@@ -153,8 +207,8 @@ from django.utils.translation import ugettext as _
   <!-- restore modal -->
   <div id="restoreTrashModal" class="modal hide fade">
     <div class="modal-header">
-      <a href="#" class="close" data-dismiss="modal">&times;</a>
-      <h3>${_('Confirm Restore')}</h3>
+      <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+      <h2 class="modal-title">${ _('Confirm Restore') }</h2>
     </div>
     <div class="modal-body">
       <p>${_('Are you sure you want to restore these files?')}</p>
@@ -171,8 +225,8 @@ from django.utils.translation import ugettext as _
   <!-- purge modal -->
   <div id="purgeTrashModal" class="modal hide fade">
     <div class="modal-header">
-      <a href="#" class="close" data-dismiss="modal">&times;</a>
-      <h3>${_('Confirm empty trash')}</h3>
+      <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+      <h2 class="modal-title">${ _('Confirm empty trash') }</h2>
     </div>
 
     <div class="modal-body">
@@ -193,8 +247,8 @@ from django.utils.translation import ugettext as _
     ${ csrf_token(request) | n,unicode }
     <div id="renameModal" class="modal hide fade">
       <div class="modal-header">
-        <a href="#" class="close" data-dismiss="modal">&times;</a>
-        <h3>${_('Renaming:')} <span id="renameFileName">file name</span></h3>
+        <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+        <h2 class="modal-title">${_('Renaming:')} <span id="renameFileName">file name</span></h2>
       </div>
       <div class="modal-body">
         <label>${_('New name')} <input id="newNameInput" name="dest_path" value="" type="text" class="input-xlarge"/></label>
@@ -206,9 +260,31 @@ from django.utils.translation import ugettext as _
         <div id="renameNameExistsAlert" class="hide" style="position: absolute; left: 10px;">
           <span class="label label-important"><span class="newName"></span> ${_('already exists.')}</span>
         </div>
-        <input id="renameSrcPath" type="hidden" name="src_path" type="text">
+        <input id="renameSrcPath" type="hidden" name="src_path">
         <a class="btn" data-dismiss="modal">${_('Cancel')}</a>
         <input type="submit" value="${_('Rename')}" class="btn btn-primary" />
+      </div>
+    </div>
+  </form>
+
+  <!-- set replication factor modal -->
+  <form id="setReplicationFactorForm" action="/filebrowser/set_replication?next=${current_request_path | n,unicode }"  method="POST" enctype="multipart/form-data" class="form-inline form-padding-fix">
+    ${ csrf_token(request) | n,unicode }
+    <div id="setReplicationModal" class="modal hide fade">
+      <div class="modal-header">
+        <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+        <h2 class="modal-title">${_('Setting replication factor for :')} <span id="setReplFileName">file name</span></h2>
+      </div>
+      <div class="modal-body">
+        <label>${_('Replication factor')} <input id="newRepFactorInput" name="replication_factor" value="" type="number" class="input-mini"/></label>
+      </div>
+      <div class="modal-footer">
+        <div id="replicationFactorRequiredAlert" class="hide" style="position: absolute; left: 10px;">
+          <span class="label label-important">${_('Replication factor is required.')}</span>
+        </div>
+        <input id="SrcPath" type="hidden" name="src_path">
+        <a class="btn" data-dismiss="modal">${_('Cancel')}</a>
+        <input type="submit" value="${_('Submit')}" class="btn btn-primary" />
       </div>
     </div>
   </form>
@@ -222,8 +298,8 @@ from django.utils.translation import ugettext as _
       select_filter = is_fs_superuser and 'SelectWithOther' or ''
     %>
       <div class="modal-header">
-        <a href="#" class="close" data-dismiss="modal">&times;</a>
-        <h3>${_('Change Owner/Group')}</h3>
+        <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+        <h2 class="modal-title">${_('Change Owner/Group')}</h2>
       </div>
 
       <div class="modal-body change-owner-modal-body clearfix" >
@@ -254,11 +330,11 @@ from django.utils.translation import ugettext as _
     ${ csrf_token(request) | n,unicode }
     <div id="changePermissionModal" class="modal hide fade">
       <div class="modal-header">
-        <a href="#" class="close" data-dismiss="modal">&times;</a>
-        <h3>${_('Change Permissions')} </h3>
+        <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+        <h2 class="modal-title">${_('Change Permissions')}</h2>
       </div>
       <div class="modal-body table-margin">
-        <table class="table table-striped">
+        <table class="table table-condensed">
           <thead>
             <tr>
               <th>&nbsp;</th>
@@ -266,7 +342,7 @@ from django.utils.translation import ugettext as _
               <th class="center">${_('Group')}</th>
               <th class="center">${_('Other')}</th>
               <th class="center">&nbsp;</th>
-              <th width="120">&nbsp</th>
+              <th width="120">&nbsp;</th>
             </tr>
           </thead>
           <tbody>
@@ -317,9 +393,9 @@ from django.utils.translation import ugettext as _
   <form id="moveForm" action="/filebrowser/move" method="POST" enctype="multipart/form-data" class="form-inline form-padding-fix">
     ${ csrf_token(request) | n,unicode }
     <div id="moveModal" class="modal hide fade">
-      <div class="modal-header" style="padding-bottom: 10px">
-        <a href="#" class="close" data-dismiss="modal">&times;</a>
-        <h3>${_('Move to')}</h3>
+      <div class="modal-header">
+        <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+        <h2 class="modal-title">${_('Move to')}</h2>
       </div>
       <div class="modal-body" style="max-height: 400px; height: 340px; overflow-x:hidden">
         <div id="moveFilechooser"></div>
@@ -339,9 +415,9 @@ from django.utils.translation import ugettext as _
   <form id="copyForm" action="/filebrowser/copy" method="POST" enctype="multipart/form-data" class="form-inline form-padding-fix">
     ${ csrf_token(request) | n,unicode }
     <div id="copyModal" class="modal hide fade">
-      <div class="modal-header" style="padding-bottom: 10px">
-        <a href="#" class="close" data-dismiss="modal">&times;</a>
-        <h3>${_('Copy to')}</h3>
+      <div class="modal-header">
+        <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+        <h2 class="modal-title">${_('Copy to')}</h2>
       </div>
       <div class="modal-body" style="max-height: 400px; height: 340px; overflow-x:hidden">
         <div id="copyFilechooser"></div>
@@ -360,8 +436,8 @@ from django.utils.translation import ugettext as _
   <!-- upload file modal -->
   <div id="uploadFileModal" class="modal hide fade">
     <div class="modal-header">
-      <a href="#" class="close" data-dismiss="modal" data-bind="visible: pendingUploads() == 0">&times;</a>
-      <h3>${_('Upload to')} <span id="uploadDirName" data-bind="text: currentPath"></span></h3>
+      <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+      <h2 class="modal-title">${_('Upload to')} <span data-bind="text: currentPath"></span></h2>
     </div>
     <div class="modal-body form-inline">
       <div id="fileUploader" class="uploader">
@@ -376,8 +452,8 @@ from django.utils.translation import ugettext as _
   <!-- upload archive modal -->
   <div id="uploadArchiveModal" class="modal hide fade">
     <div class="modal-header">
-      <a href="#" class="close" data-dismiss="modal" data-bind="visible: pendingUploads() == 0">&times;</a>
-      <h3>${_('Upload and extract in')} <span id="uploadDirName" data-bind="text: currentPath"></span></h3>
+      <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+      <h2 class="modal-title">${_('Upload and extract in')} <span data-bind="text: currentPath"></span></h2>
     </div>
     <div class="modal-body form-inline">
       <div id="archiveUploader" class="uploader">
@@ -394,12 +470,12 @@ from django.utils.translation import ugettext as _
     ${ csrf_token(request) | n,unicode }
     <div id="createDirectoryModal" class="modal hide fade">
       <div class="modal-header">
-        <a href="#" class="close" data-dismiss="modal">&times;</a>
+        <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
         <!-- ko if: !isS3() || (isS3() && !isS3Root()) -->
-        <h3>${_('Create Directory')}</h3>
+        <h2 class="modal-title">${_('Create Directory')}</h2>
         <!-- /ko -->
         <!-- ko if: isS3() && isS3Root() -->
-        <h3>${_('Create Bucket')}</h3>
+        <h2 class="modal-title">${_('Create Bucket')}</h2>
         <!-- /ko -->
       </div>
       <div class="modal-body">
@@ -411,7 +487,7 @@ from django.utils.translation import ugettext as _
           ${_('Bucket Name')}
           <!-- /ko -->
           <input id="newDirectoryNameInput" name="name" value="" type="text" class="input-xlarge"/></label>
-        <input type="hidden" name="path" type="text" data-bind="value: currentPath"/>
+          <input type="hidden" name="path" data-bind="value: currentPath"/>
       </div>
       <div class="modal-footer">
         <div id="directoryNameRequiredAlert" class="hide" style="position: absolute; left: 10px;">
@@ -431,12 +507,12 @@ from django.utils.translation import ugettext as _
     ${ csrf_token(request) | n,unicode }
     <div id="createFileModal" class="modal hide fade">
         <div class="modal-header">
-          <a href="#" class="close" data-dismiss="modal">&times;</a>
-          <h3>${_('Create File')}</h3>
+          <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+          <h2 class="modal-title">${_('Create File')}</h2>
         </div>
         <div class="modal-body">
           <label>${_('File Name')} <input id="newFileNameInput" name="name" value="" type="text" class="input-xlarge"/></label>
-          <input type="hidden" name="path" type="text" data-bind="value: currentPath"/>
+          <input type="hidden" name="path" data-bind="value: currentPath"/>
         </div>
         <div class="modal-footer">
            <div id="fileNameRequiredAlert" class="alert-message error hide" style="position: absolute; left: 10px;">
@@ -454,14 +530,14 @@ from django.utils.translation import ugettext as _
   <!-- content summary modal -->
   <div id="contentSummaryModal" class="modal hide fade">
     <div class="modal-header">
-      <a href="#" class="close" data-dismiss="modal">&times;</a>
+      <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
       <!-- ko if: selectedFile -->
-      <h3 style="word-break: break-all">${_('Summary for')} <span data-bind="text: selectedFile().path"></span></h3>
+      <h2 class="modal-title" style="word-break: break-all">${_('Summary for')} <span data-bind="text: selectedFile().path"></span></h2>
       <!--/ko -->
     </div>
     <div class="modal-body">
       <div data-bind="visible: isLoadingSummary"><i class="fa fa-spin fa-spinner fa-2x fa-fw" style="color: #CCC"></i></div>
-      <table class="table table-striped" data-bind="visible: !isLoadingSummary()">
+      <table class="table table-condensed" data-bind="visible: !isLoadingSummary()">
         <tr>
           <th>${ _('Disk space consumed') }</th>
           <td data-bind="text: formatBytes(contentSummary().spaceConsumed(), 4)"></td>
@@ -477,6 +553,10 @@ from django.utils.translation import ugettext as _
         <tr>
           <th>${ _('Disk space quota') }</th>
           <td data-bind="text: formatBytes(contentSummary().spaceQuota(), 4)"></td>
+        </tr>
+        <tr>
+          <th>${ _('Replication factor') }</th>
+          <td data-bind="text: contentSummary().replication()"></td>
         </tr>
         <tr>
           <th>${ _('Number of directories') }</th>
@@ -499,7 +579,7 @@ from django.utils.translation import ugettext as _
     <li data-bind="visible: !isS3() || (isS3() && !isS3Root())"><a href="#" title="${_('Rename')}" data-bind="visible: !$root.inTrash() && $root.selectedFiles().length == 1, click: $root.renameFile,
     enable: $root.selectedFiles().length == 1 && isCurrentDirSelected().length == 0"><i class="fa fa-fw fa-font"></i>
     ${_('Rename')}</a></li>
-    <li data-bind="visible: !isS3() || (isS3() && !isS3Root())"><a href="#"title="${_('Move')}" data-bind="click: $root.move, enable: $root.selectedFiles().length > 0 &&
+    <li data-bind="visible: !isS3() || (isS3() && !isS3Root())"><a href="#" title="${_('Move')}" data-bind="click: $root.move, enable: $root.selectedFiles().length > 0 &&
     isCurrentDirSelected().length == 0"><i class="fa fa-fw fa-random"></i> ${_('Move')}</a></li>
     <li data-bind="visible: !isS3() || (isS3() && !isS3Root())"><a href="#" title="${_('Copy')}" data-bind="click: $root.copy, enable: $root.selectedFiles().length > 0 &&
     isCurrentDirSelected().length == 0"><i class="fa fa-fw fa-files-o"></i> ${_('Copy')}</a></li>
@@ -528,6 +608,19 @@ from django.utils.translation import ugettext as _
     <li data-bind="css: {'disabled': selectedFiles().length > 1 }, visible: !isS3()">
       <a class="pointer" data-bind="click: function(){ selectedFiles().length == 1 ? showSummary(): void(0)}"><i class="fa fa-fw fa-pie-chart"></i> ${_('Summary')}</a>
     </li>
+    <li>
+      <a href="javascript: void(0)" title="${_('Set Replication')}" data-bind="visible: !inTrash() && !isS3() && selectedFiles().length == 1 && selectedFile().type == 'file', click: setReplicationFactor">
+        <i class="fa fa-fw fa-hdd-o"></i> ${_('Set replication')}
+      </a>
+    </li>
+    % if ENABLE_EXTRACT_UPLOADED_ARCHIVE.get():
+      <li><a href="javascript: void(0)" title="${_('Compress selection into a single archive')}" data-bind="click: function() { setCompressArchiveDefault(); confirmCompressFiles();}, visible: showCompressButton">
+        <i class="fa fa-fw fa-file-archive-o"></i> ${_('Compress')}</a>
+      </li>
+      <li><a href="javascript: void(0)" title="${_('Extract selected archive')}" data-bind="visible: selectedFiles().length == 1 && isArchive() && !isS3(), click: confirmExtractArchive">
+        <i class="fa fa-fw fa-file-archive-o"></i> ${_('Extract')}</a>
+      </li>
+    % endif
   <!-- /ko -->
   <!-- ko if: $root.inTrash -->
     <li><a href="#" title="${_('Restore from trash')}" data-bind="visible: inRestorableTrash() &&  selectedFiles().length > 0 && isCurrentDirSelected().length == 0, click: restoreTrashSelected"><i class="fa fa-fw fa-cloud-upload"></i> ${_('Restore')}</a></li>
@@ -538,21 +631,10 @@ from django.utils.translation import ugettext as _
 
   <div id="submit-wf-modal" class="modal hide"></div>
 
-  <div id="progressStatus" class="uploadstatus well hide">
-    <h4>${ _('Upload progress') }</h4>
-    <div id="progressStatusBar" class="hide progress active">
-      <div class="bar bar-upload"></div>
-    </div>
-    <div id="progressStatusContent" class="scrollable-uploadstatus">
-      <div class="updateStatus"> </div>
-    </div>
-  <div>
-</div>
-
   <script id="fileTemplate" type="text/html">
     <tr class="row-animated" style="cursor: pointer" data-bind="drop: { enabled: name !== '.' && type !== 'file' && (!$root.isS3() || ($root.isS3() && !$root.isS3Root())), value: $data }, event: { mouseover: toggleHover, mouseout: toggleHover, contextmenu: showContextMenu }, click: $root.viewFile, css: { 'row-selected': selected(), 'row-highlighted': highlighted(), 'row-deleted': deleted() }">
       <td class="center" data-bind="click: handleSelect" style="cursor: default">
-        <div data-bind="visible: name != '..', css: { hueCheckbox: name != '..', 'fa': name != '..', 'fa-check': selected }"></div>
+        <div data-bind="multiCheck: '#fileBrowserTable', visible: name != '..', css: { hueCheckbox: name != '..', 'fa': name != '..', 'fa-check': selected }"></div>
       </td>
       <td class="left"><i data-bind="click: $root.viewFile, css: { 'fa': true,
        % if 'oozie' in apps:
@@ -599,11 +681,9 @@ from django.utils.translation import ugettext as _
 
   <script src="${ static('desktop/ext/js/jquery/plugins/jquery-ui-1.10.4.custom.min.js') }" type="text/javascript" charset="utf-8"></script>
   <script src="${ static('desktop/ext/js/datatables-paging-0.1.js') }" type="text/javascript" charset="utf-8"></script>
-  <script src="${ static('desktop/js/dropzone.js') }" type="text/javascript" charset="utf-8"></script>
-  <script src="${ static('desktop/js/apiHelper.js') }"></script>
 
 
-  <script charset="utf-8">
+  <script>
     var _dragged;
     var _dropzone;
 
@@ -858,7 +938,10 @@ from django.utils.translation import ugettext as _
         handleSelect: function (row, e) {
           e.preventDefault();
           e.stopPropagation();
-          this.selected(! this.selected());
+          this.selected(!this.selected());
+          if (!this.selected()) {
+            hideContextMenu();
+          }
           this.highlighted(false);
           this.deleted(false);
           viewModel.allSelected(false);
@@ -927,19 +1010,16 @@ from django.utils.translation import ugettext as _
     var FileBrowserModel = function (files, page, breadcrumbs, currentDirPath) {
       var self = this;
 
-      if (! $.cookie("hueFilebrowserRecordsPerPage")){
-        $.cookie("hueFilebrowserRecordsPerPage", "45");
-      }
-
       self.page = ko.observable(new Page(page));
       self.recordsPerPageChoices = ["15", "30", "45", "60", "100", "200", "1000"],
-      self.recordsPerPage = ko.observable($.cookie("hueFilebrowserRecordsPerPage"));
+      self.recordsPerPage = ko.observable(apiHelper.getFromTotalStorage('fb', 'records_per_page', 45));
       self.targetPageNum = ko.observable(1);
       self.targetPath = ko.observable("${current_request_path | n,unicode }");
       self.sortBy = ko.observable("name");
       self.sortDescending = ko.observable(false);
       self.searchQuery = ko.observable("");
       self.searchQuery.extend({ rateLimit: 500 });
+      self.skipTrash = ko.observable(false);
       self.enableFilterAfterSearch = true;
       self.isCurrentDirSentryManaged = ko.observable(false);
       self.pendingUploads = ko.observable(0);
@@ -1026,6 +1106,8 @@ from django.utils.translation import ugettext as _
 
       self.allSelected = ko.observable(false);
 
+      self.compressArchiveName = ko.observable('');
+
       self.selectedFiles = ko.computed(function () {
         return ko.utils.arrayFilter(self.files(), function (file) {
           return file.selected();
@@ -1047,6 +1129,14 @@ from django.utils.translation import ugettext as _
       self.selectedFile = ko.computed(function () {
         return self.selectedFiles()[0];
       }, self).extend({ rateLimit: { timeout: 500, method: "notifyWhenChangesStop" } });
+
+      self.isSelectedFileSql = ko.pureComputed(function() {
+        return self.selectedFile().name.endsWith('.sql') || self.selectedFile().name.endsWith('.hql');
+      });
+
+      self.openFileInEditor = function() {
+        huePubSub.publish('open.editor.new.query', {'statementType': 'file', 'statementPath': self.selectedFile().path});
+      };
 
       self.currentPath = ko.observable(currentDirPath);
       self.currentPath.subscribe(function (path) {
@@ -1083,7 +1173,8 @@ from django.utils.translation import ugettext as _
         spaceQuota: -1,
         length: 0,
         directoryCount: 0,
-        fileCount: 0
+        fileCount: 0,
+        replication: 0
       }));
       self.showSummary = function () {
         self.isLoadingSummary(true);
@@ -1133,7 +1224,7 @@ from django.utils.translation import ugettext as _
           }
 
           if ($("#hueBreadcrumbText").is(":visible")) {
-            $(".hueBreadcrumb").show();
+            $(".hue-breadcrumbs").show();
             $("#hueBreadcrumbText").hide();
             $("#editBreadcrumb").show();
           }
@@ -1186,7 +1277,7 @@ from django.utils.translation import ugettext as _
       };
 
       self.recordsPerPage.subscribe(function (newValue) {
-        $.cookie("hueFilebrowserRecordsPerPage", newValue);
+        apiHelper.setInTotalStorage('fb', 'records_per_page', newValue)
         self.retrieveData();
       });
 
@@ -1285,7 +1376,7 @@ from django.utils.translation import ugettext as _
           location.hash = stripHashes(file.path);
         } else {
           %if is_embeddable:
-          huePubSub.publish('open.fb.file', file.path);
+          huePubSub.publish('open.link', file.url);
           %else:
           location.href = file.url;
           %endif
@@ -1319,6 +1410,27 @@ from django.utils.translation import ugettext as _
         });
 
         $("#renameModal").modal({
+          keyboard:true,
+          show:true
+        });
+      };
+
+      self.setReplicationFactor = function () {
+        $("#SrcPath").attr("value", self.selectedFile().path);
+
+        $("#setReplFileName").text(self.selectedFile().path);
+
+        $("#setReplicationFactorForm").attr("action", "/filebrowser/set_replication?next=${url('filebrowser.views.view', path='')}" + self.currentPath());
+
+        $('#setReplicationFactorForm').ajaxForm({
+          dataType: 'json',
+          success: function() {
+            $("#setReplicationModal").modal('hide');
+            self.retrieveData(true);
+          }
+        });
+
+        $("#setReplicationModal").modal({
           keyboard:true,
           show:true
         });
@@ -1536,7 +1648,7 @@ from django.utils.translation import ugettext as _
         }
       };
 
-      var deleteSelected = function(skip_trash) {
+      var deleteSelected = function() {
         var paths = [];
 
         $(self.selectedFiles()).each(function (index, file) {
@@ -1546,7 +1658,7 @@ from django.utils.translation import ugettext as _
         hiddenFields($("#deleteForm"), 'path', paths);
 
         $("#deleteForm").attr("action", "/filebrowser/rmtree" + "?" +
-          (skip_trash ? "skip_trash=true&" : "") +
+          (self.skipTrash() ? "skip_trash=true&" : "") +
           "next=${url('filebrowser.views.view', path='')}" + self.currentPath());
 
         $("#deleteModal").modal({
@@ -1578,10 +1690,12 @@ from django.utils.translation import ugettext as _
       };
 
       self.deleteSelected = function () {
-        deleteSelected(true);
+        self.skipTrash(true);
+        deleteSelected();
       };
 
       self.trashSelected = function () {
+        self.skipTrash(false);
         deleteSelected();
       };
 
@@ -1608,11 +1722,76 @@ from django.utils.translation import ugettext as _
         });
       };
 
+      self.showCompressButton = ko.computed(function() {
+        var fileNames = self.selectedFiles().map(function(file) {
+          return file.name;
+        });
+        if (fileNames.indexOf('.') !== -1) {
+          return false;
+        }
+        return !self.isS3() && (self.selectedFiles().length > 1 || !(self.selectedFiles().length === 1 && self.isArchive()));
+      });
+
+      self.setCompressArchiveDefault = function() {
+        if (self.selectedFiles().length == 1) {
+          self.compressArchiveName(self.selectedFile().name + '.zip');
+        } else {
+          if (self.breadcrumbs().length === 1) {
+            self.compressArchiveName('root.zip'); // When compressing multiple files in root directory
+          }
+          else {
+            self.compressArchiveName(self.breadcrumbs()[self.breadcrumbs().length - 1].label + '.zip'); // Setting to parent directory name
+          }
+        }
+      };
+
+      self.confirmCompressFiles = function() {
+        $("#confirmCompressModal").modal({
+          keyboard:true,
+          show:true
+        });
+      };
+
       self.extractSelectedArchive = function() {
         $("#confirmExtractModal").modal("hide");
         $.post("/filebrowser/extract_archive", {
           "archive_name": self.selectedFile().name,
           "upload_path": self.currentPath(),
+        }, function (data) {
+          if (data.status == 0) {
+            $.jHueNotify.info("${ _('Task ') }" + data.history_uuid + "${_(' submitted.') }");
+            huePubSub.publish('notebook.task.submitted', data.history_uuid);
+          } else {
+            $(document).trigger("error", data.message);
+          }
+        }).fail(function (xhr, textStatus, errorThrown) {
+          $(document).trigger("error", xhr.responseText);
+        });
+      };
+
+      self.archiveOverrideWarning = function() {
+        $("#confirmCompressModal").modal("hide");
+        var fileNames = self.files().map(function(file) {
+          return file.name;
+        });
+        if (fileNames.indexOf(self.compressArchiveName()) !== -1) {
+          $("#compressWarningModal").modal("show");
+        } else {
+          self.compressSelectedFiles();
+        }
+      }
+
+      self.compressSelectedFiles = function() {
+        $("#compressWarningModal").modal("hide");
+        var fileNames = [];
+        $(self.selectedFiles()).each(function (index, file) {
+          fileNames.push(file.name);
+        });
+
+        $.post("/filebrowser/compress_files", {
+          "files": fileNames,
+          "upload_path": self.currentPath(),
+          "archive_name": self.compressArchiveName()
         }, function (data) {
           if (data.status == 0) {
             $.jHueNotify.info("${ _('Task ') }" + data.history_uuid + "${_(' submitted.') }");
@@ -1941,6 +2120,20 @@ from django.utils.translation import ugettext as _
         hideContextMenu();
       });
 
+      // Allow only numeric symbols for setting replication factor
+      $("#newRepFactorInput").keydown(function (e) {
+        if ($.inArray(e.keyCode, [46, 8, 9, 27, 13, 110, 190]) !== -1 ||
+          (e.keyCode == 65 && (e.ctrlKey === true || e.metaKey === true)) ||
+          (e.keyCode == 67 && (e.ctrlKey === true || e.metaKey === true)) ||
+          (e.keyCode == 88 && (e.ctrlKey === true || e.metaKey === true)) ||
+          (e.keyCode >= 35 && e.keyCode <= 39)) {
+            return;
+        }
+        if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105)) {
+          e.preventDefault();
+        }
+      });
+
       // Drag and drop uploads from anywhere on filebrowser screen
       if (window.FileReader) {
         var showHoverMsg = function (msg) {
@@ -1956,16 +2149,16 @@ from django.utils.translation import ugettext as _
           // determine if the item dragged originated outside DOM
           _isExternalFile = true;
 
-        $('body').on('dragstart', function (e) {
+        $('.filebrowser').on('dragstart', function (e) {
           // External files being dragged into the DOM won't have a dragstart event
           _isExternalFile = false;
         });
 
-        $('body').on('dragend', function (e) {
+        $('.filebrowser').on('dragend', function (e) {
           _isExternalFile = true;
         });
 
-        $('body').on('dragenter', function (e) {
+        $('.filebrowser').on('dragenter', function (e) {
           e.preventDefault();
 
           if (_isExternalFile && !($("#uploadFileModal").is(":visible")) && !($("#uploadArchiveModal").is(":visible")) && (!viewModel.isS3() || (viewModel.isS3() && !viewModel.isS3Root()))) {
@@ -2013,7 +2206,7 @@ from django.utils.translation import ugettext as _
                 '<span class="break-word" data-dz-name></span>' +
                 '<div class="pull-right">' +
                 '<span class="muted" data-dz-size></span>&nbsp;&nbsp;' +
-                '<span data-dz-remove><a href="javascript:undefined;" title="${ _('Cancel upload') }"><i class="fa fa-fw fa-times"></i></a></span>' +
+                '<span data-dz-remove><a href="javascript:undefined;" title="' + DropzoneGlobals.i18n.cancelUpload + '"><i class="fa fa-fw fa-times"></i></a></span>' +
                 '<span style="display: none" data-dz-uploaded><i class="fa fa-fw fa-check muted"></i></span>' +
                 '</div>' +
                 '<div class="progress-row-bar" data-dz-uploadprogress></div>' +
@@ -2025,16 +2218,24 @@ from django.utils.translation import ugettext as _
               if (e.dataTransfer.files.length > 0) {
                 $('#progressStatus').removeClass('hide');
                 $('#progressStatusBar').removeClass('hide');
-                $('#progressStatusBar div').css("width", "0");
+                $('#progressStatusBar div').css('width', '0');
               }
             },
+            processing: function (file) {
+              var newDest = ops.path;
+              if (file.fullPath) {
+                newDest = ops.path + '/' + file.fullPath.substr(0, file.fullPath.length - file.name.length);
+              }
+              this.options.params.dest = newDest;
+              this.options.url = '/filebrowser/upload/file?dest=' + newDest;
+            },
             uploadprogress: function (file, progress) {
-              $("[data-dz-name]").each(function (cnt, item) {
+              $('[data-dz-name]').each(function (cnt, item) {
                 if ($(item).text() === file.name) {
-                  $(item).parents(".progress-row").find("[data-dz-uploadprogress]").width(progress.toFixed() + "%");
-                  if (progress.toFixed() === "100"){
-                    $(item).parents(".progress-row").find("[data-dz-remove]").hide();
-                    $(item).parents(".progress-row").find("[data-dz-uploaded]").show();
+                  $(item).parents('.progress-row').find('[data-dz-uploadprogress]').width(progress.toFixed() + '%');
+                  if (progress.toFixed() === '100') {
+                    $(item).parents('.progress-row').find('[data-dz-remove]').hide();
+                    $(item).parents('.progress-row').find('[data-dz-uploaded]').show();
                   }
                 }
               });
@@ -2043,7 +2244,7 @@ from django.utils.translation import ugettext as _
               $('#progressStatusBar div').width(progress.toFixed() + "%");
             },
             canceled: function () {
-              $.jHueNotify.info("${_('Upload has been canceled')}");
+              $.jHueNotify.info(DropzoneGlobals.i18n.uploadCanceled);
             },
             complete: function (data) {
               if (data.xhr.response != '') {
@@ -2053,7 +2254,7 @@ from django.utils.translation import ugettext as _
                     $(document).trigger('error', response.data);
                   }
                   else {
-                    $(document).trigger('info', response.path + "${ _(' uploaded successfully.') }");
+                    $(document).trigger('info', response.path + ' ' + DropzoneGlobals.i18n.uploadSucceeded);
                     viewModel.filesToHighlight.push(response.path);
                   }
                 }
@@ -2061,7 +2262,7 @@ from django.utils.translation import ugettext as _
             }
           };
           if (ops.path.toLowerCase() !== 's3a://') {
-            _dropzone = new Dropzone(document.body, options);
+            _dropzone = new Dropzone($('.hoverMsg')[0], options);
 
             _dropzone.on('queuecomplete', function () {
               setTimeout(function () {
@@ -2186,6 +2387,20 @@ from django.utils.translation import ugettext as _
            return false;
         }
        });
+
+      $("#setReplicationFactorForm").submit(function () {
+        if ($("#newRepFactorInput").val() == "") {
+          $("#replicationFactorRequiredAlert").show();
+          $("#newRepFactorInput").addClass("fieldError");
+          resetPrimaryButtonsStatus(); //globally available
+          return false;
+        }
+      });
+
+      $("#newRepFactorInput").focus(function () {
+        $("#replicationFactorRequiredAlert").hide();
+        $("#newRepFactorInput").removeClass("fieldError");
+      });
 
       huePubSub.subscribe('update.autocompleters', function(){
         $("#moveDestination").jHueHdfsAutocomplete({
@@ -2318,7 +2533,7 @@ from django.utils.translation import ugettext as _
       $("#editBreadcrumb").click(function (e) {
         if ($(e.target).is('ul')){
           $(this).hide();
-          $(".hueBreadcrumb").hide();
+          $(".hue-breadcrumbs").hide();
           $("#hueBreadcrumbText").show().focus();
         }
       });
@@ -2340,7 +2555,7 @@ from django.utils.translation import ugettext as _
         },
         onBlur: function() {
           $("#hueBreadcrumbText").hide();
-          $(".hueBreadcrumb").show();
+          $(".hue-breadcrumbs").show();
           $("#editBreadcrumb").show();
         },
         smartTooltip: "${_('Did you know? You can use the tab key or CTRL + Space to autocomplete file and folder names')}"
@@ -2356,37 +2571,39 @@ from django.utils.translation import ugettext as _
       });
 
       $(window).bind("hashchange", function () {
-        var targetPath = "";
-        var hash = window.location.hash.substring(1);
-        if (hash.search(/(<([^>]+)>)/ig) > -1) {
-          hash = encodeURI(hash);
-        }
+        if (window.location.pathname.indexOf('/filebrowser') > -1) {
+          var targetPath = "";
+          var hash = window.location.hash.substring(1);
+          if (hash.search(/(<([^>]+)>)/ig) > -1) {
+            hash = encodeURI(hash);
+          }
 
-        if (hash != null && hash != "") {
-          addPathToHistory(hash);
+          if (hash != null && hash != "") {
+            addPathToHistory(hash);
 
-          targetPath = "${url('filebrowser.views.view', path='')}";
-          if (hash.indexOf("!!") != 0) {
-            targetPath += stripHashes(hash);
+            targetPath = "${url('filebrowser.views.view', path='')}";
+            if (hash.indexOf("!!") != 0) {
+              targetPath += stripHashes(hash);
+            }
+            else {
+              targetPath = viewModel.targetPath() + hash;
+            }
+            if (targetPath.indexOf("!!") > -1) {
+              viewModel.targetPageNum(targetPath.substring(targetPath.indexOf("!!") + 2) * 1)
+              targetPath = targetPath.substring(0, targetPath.indexOf("!!"));
+            }
+            else {
+              viewModel.targetPageNum(1)
+            }
           }
-          else {
-            targetPath = viewModel.targetPath() + hash;
+          if (window.location.href.indexOf("#") == -1) {
+            viewModel.targetPageNum(1);
+            targetPath = "${current_request_path | n,unicode }";
           }
-          if (targetPath.indexOf("!!") > -1) {
-            viewModel.targetPageNum(targetPath.substring(targetPath.indexOf("!!") + 2) * 1)
-            targetPath = targetPath.substring(0, targetPath.indexOf("!!"));
+          if (targetPath != "") {
+            viewModel.targetPath(targetPath);
+            viewModel.retrieveData();
           }
-          else {
-            viewModel.targetPageNum(1)
-          }
-        }
-        if (window.location.href.indexOf("#") == -1) {
-          viewModel.targetPageNum(1);
-          targetPath = "${current_request_path | n,unicode }";
-        }
-        if (targetPath != "") {
-          viewModel.targetPath(targetPath);
-          viewModel.retrieveData();
         }
       });
 

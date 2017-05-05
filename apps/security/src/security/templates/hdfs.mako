@@ -23,7 +23,9 @@ from django.utils.translation import ugettext as _
 <%namespace name="layout" file="layout.mako" />
 <%namespace name="tree" file="common_tree.mako" />
 
+%if not is_embeddable:
 ${ commonheader(_('Hadoop Security'), "security", user, request) | n,unicode }
+%endif
 ${ layout.menubar(section='hdfs') }
 
 
@@ -79,7 +81,7 @@ ${ layout.menubar(section='hdfs') }
   </div>
 </script>
 
-<div class="container-fluid">
+<div id="securityHdfsComponents" class="container-fluid">
   <div class="row-fluid">
     <div class="span12">
       <div class="card card-small">
@@ -97,7 +99,7 @@ ${ layout.menubar(section='hdfs') }
               <div class="path-container">
                 <div class="input-append span12">
                   <input id="path" class="path" type="text" data-bind="value: $root.assist.path" autocomplete="off" />
-                  <a data-bind="attr: { href: '/filebrowser/view=' + $root.assist.path() }" target="_blank" title="${ _('Open in File Browser') }" class="btn btn-inverse">
+                  <a data-bind="hueLink: '/filebrowser/view=' + $root.assist.path(), attr: {target: IS_HUE_4 ? 'self' : 'blank'}" title="${ _('Open in File Browser') }" class="btn btn-inverse">
                     <i class="fa fa-external-link"></i>
                   </a>
                 </div>
@@ -158,7 +160,7 @@ ${ layout.menubar(section='hdfs') }
 
                     <span data-bind="visible: ! $root.assist.showAclsAsText()">
                       <h4>${ _('Path') }</h4>
-                      <a class="force-word-break" data-bind="attr: { href: '/filebrowser/view=' + $root.assist.path() }, text: $root.assist.path()" target="_blank" title="${ _('Open in File Browser') }" rel="tooltip"></a>
+                      <a class="force-word-break" data-bind="hueLink: '/filebrowser/view=' + $root.assist.path(), text: $root.assist.path(), attr: {target: IS_HUE_4 ? 'self' : 'blank'}" title="${ _('Open in File Browser') }" rel="tooltip"></a>
 
                       <h4>${ _('User/Group') }</h4>
                       <i class="fa fa-user" style="color: #999999" title="${_('User')}"></i> <span title="${_('User')}" data-bind="text: $root.assist.owner"></span>&nbsp;
@@ -200,8 +202,8 @@ ${ layout.menubar(section='hdfs') }
 
 <div id="bulkActionsModal" class="modal hide fade in" role="dialog">
   <div class="modal-header">
-    <a href="#" class="close" data-dismiss="modal">&times;</a>
-    <h3>${ _('Select one operation') }</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${_('Select one operation')}</h2>
   </div>
   <div class="modal-body" style="overflow-x: hidden">
 
@@ -231,7 +233,7 @@ ${ layout.menubar(section='hdfs') }
       <div class="span4">
         <h4>${ _('to apply to the selection') }</h4>
         <ul class="unstyled modal-panel" data-bind="foreach: $root.assist.checkedItems">
-          <li><a class="force-word-break" data-bind="attr: { href: '/filebrowser/view=' + path }, text: path" target="_blank" title="${ _('Open in File Browser') }" rel="tooltip"></a></li>
+          <li><a class="force-word-break" data-bind="hueLink: '/filebrowser/view=' + path, text: path, attr: {target: IS_HUE_4 ? 'self' : 'blank'}" title="${ _('Open in File Browser') }" rel="tooltip"></a></li>
         </ul>
       </div>
     </div>
@@ -277,11 +279,11 @@ ${ layout.menubar(section='hdfs') }
 </%def>
 
 <%def name="aclBitPullRight()">
-  <div class="pull-right rwx" data-bind="style: { color: aclBit() ? '#338bb8': '#999999'}">
+  <div class="pull-right rwx" data-bind="style: { color: aclBit() ? '#0B7FAD': '#999999'}">
     <span data-bind="text: rwx"></span>
   </div>
   <div class="pull-right">
-    <i class="fa fa-shield" data-bind="visible: aclBit()" style="color: #338bb8" title="${ _('Has some ACLs') }"></i>
+    <i class="fa fa-shield" data-bind="visible: aclBit()" style="color: #0B7FAD" title="${ _('Has some ACLs') }"></i>
   </div>
 </%def>
 
@@ -294,7 +296,7 @@ ${ tree.import_templates(itemClick='$root.assist.setPath', iconClick='$root.assi
 <script type="text/javascript">
 
   var viewModel = new HdfsViewModel(${ initial | n,unicode });
-  ko.applyBindings(viewModel);
+  ko.applyBindings(viewModel, $('#securityHdfsComponents')[0]);
 
   $(document).ready(function () {
 
@@ -368,7 +370,9 @@ ${ tree.import_templates(itemClick='$root.assist.setPath', iconClick='$root.assi
     });
 
     window.onpopstate = function() {
-      viewModel.assist.path(window.location.hash.substr(1));
+      if (window.location.pathname.indexOf('/security') > -1) {
+        viewModel.assist.path(window.location.hash.substr(1));
+      }
     };
 
     $("#bulkActionsModal").modal({
@@ -378,5 +382,6 @@ ${ tree.import_templates(itemClick='$root.assist.setPath', iconClick='$root.assi
   });
 </script>
 
-
+%if not is_embeddable:
 ${ commonfooter(request, messages) | n,unicode }
+%endif

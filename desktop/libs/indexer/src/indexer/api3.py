@@ -26,12 +26,13 @@ from desktop.lib.django_util import JsonResponse
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.models import Document2
 from notebook.connectors.base import get_api, Notebook
+from notebook.decorators import api_error_handler
+from notebook.models import make_notebook
 
 from indexer.controller import CollectionManagerController
 from indexer.file_format import HiveFormat
 from indexer.fields import Field
 from indexer.smart_indexer import Indexer
-from notebook.models import make_notebook
 
 
 LOG = logging.getLogger(__name__)
@@ -65,11 +66,15 @@ def _convert_format(format_dict, inverse=False):
       format_dict[field] = _escape_white_space_characters(format_dict[field], inverse)
 
 
+@api_error_handler
 def guess_format(request):
   file_format = json.loads(request.POST.get('fileFormat', '{}'))
 
   if file_format['inputFormat'] == 'file':
     indexer = Indexer(request.user, request.fs)
+    if not request.fs.isfile(file_format["path"]):
+      raise PopupException(_('Path %(path)s is not a file') % file_format)
+
     stream = request.fs.open(file_format["path"])
     format_ = indexer.guess_format({
       "file": {
@@ -92,6 +97,7 @@ def guess_format(request):
   elif file_format['inputFormat'] == 'query':
     format_ = {"quoteChar": "\"", "recordSeparator": "\\n", "type": "csv", "hasHeader": False, "fieldSeparator": "\u0001"}
 
+  format_['status'] = 0
   return JsonResponse(format_)
 
 
@@ -149,6 +155,7 @@ def index_file(request):
   return JsonResponse(job_handle)
 
 
+@api_error_handler
 def importer_submit(request):
   source = json.loads(request.POST.get('source', '{}'))
   outputFormat = json.loads(request.POST.get('destination', '{}'))['outputFormat']
@@ -189,19 +196,13 @@ def create_database(request, source, destination):
   editor_type = 'hive'
   on_success_url = reverse('metastore:show_tables', kwargs={'database': database})
 
-  try:
-    notebook = make_notebook(name='Execute and watch', editor_type=editor_type, statement=sql, status='ready', on_success_url=on_success_url)
-    return notebook.execute(request, batch=False)
-  except Exception, e:
-    raise PopupException(_('The table could not be created.'), detail=e.message)
+  notebook = make_notebook(name='Execute and watch', editor_type=editor_type, statement=sql, status='ready', on_success_url=on_success_url, is_task=True)
+  return notebook.execute(request, batch=False)
 
 
 def _create_table(request, source, destination):
-  try:
-    notebook = _create_table_from_a_file(request, source, destination)
-    return notebook.execute(request, batch=False)
-  except Exception, e:
-    raise PopupException(_('The table could not be created.'), detail=e.message)
+  notebook = _create_table_from_a_file(request, source, destination)
+  return notebook.execute(request, batch=False)
 
 
 def _create_table_from_a_file(request, source, destination):
@@ -232,12 +233,11 @@ def _create_table_from_a_file(request, source, destination):
     field_delimiter = destination['customFieldDelimiter']
     collection_delimiter = destination['customCollectionDelimiter']
     map_delimiter = destination['customMapDelimiter']
-    regexp_delimiter = destination['customRegexp']
   else:
     field_delimiter = ','
-    collection_delimiter = r'\\002'
-    map_delimiter = r'\\003'
-    regexp_delimiter = '.*'
+    collection_delimiter = r'\002'
+    map_delimiter = r'\003'
+  regexp_delimiter = destination['customRegexp']
 
   file_format = 'TextFile'
   row_format = 'Delimited'
@@ -248,14 +248,28 @@ def _create_table_from_a_file(request, source, destination):
 
   if source['inputFormat'] == 'manual':
     load_data = False
+    source['format'] = {
+      'quoteChar': '"',
+      'fieldSeparator': ','
+    }
 
   if table_format == 'json':
     row_format = 'serde'
+    serde_name = 'org.apache.hive.hcatalog.data.JsonSerDe'
+  elif table_format == 'regexp':
+    row_format = 'serde'
+    serde_name = 'org.apache.hadoop.hive.serde2.RegexSerDe'
+    serde_properties = '"input.regex" = "%s"' % regexp_delimiter
+  elif table_format == 'csv':
+    if source['format']['quoteChar'] == '"':
+      source['format']['quoteChar'] = '\\"'
+    row_format = 'serde'
     serde_name = 'org.apache.hadoop.hive.serde2.OpenCSVSerde'
-    serde_properties = '''"separatorChar" = "\\t",
-   "quoteChar"     = "'",
-   "escapeChar"    = "\\\\"
-   '''
+    serde_properties = '''"separatorChar" = "%(fieldSeparator)s",
+  "quoteChar"     = "%(quoteChar)s",
+  "escapeChar"    = "\\\\"
+  ''' % source['format']
+
 
   if table_format in ('parquet', 'kudu'):
     if load_data:
@@ -265,12 +279,16 @@ def _create_table_from_a_file(request, source, destination):
           'database': database,
           'table_name': table_name
       }
-    else:
+    else: # Manual
       row_format = ''
       file_format = table_format
       skip_header = False
       if table_format == 'kudu':
         columns = [col for col in columns if col['name'] in primary_keys] + [col for col in columns if col['name'] not in primary_keys]
+
+  if table_format == 'kudu':
+    collection_delimiter = None
+    map_delimiter = None
 
   if external or (load_data and table_format in ('parquet', 'kudu')):
     if not request.fs.isdir(external_path): # File selected
@@ -287,8 +305,8 @@ def _create_table_from_a_file(request, source, destination):
           'comment': comment,
           'row_format': row_format,
           'field_terminator': field_delimiter,
-          'collection_terminator': collection_delimiter,
-          'map_key_terminator': map_delimiter,
+          'collection_terminator': collection_delimiter, # Only if Hive
+          'map_key_terminator': map_delimiter, # Only if Hive
           'serde_name': serde_name,
           'serde_properties': serde_properties,
           'file_format': file_format,
@@ -304,15 +322,21 @@ def _create_table_from_a_file(request, source, destination):
     }
   )
 
-  if table_format == 'text' and not external and load_data:
-    sql += "\n\nLOAD DATA INPATH '%s' INTO TABLE `%s`.`%s`;" % (source_path, database, table_name)
+  if table_format in ('text', 'json', 'csv', 'regexp') and not external and load_data:
+    form_data = {
+      'path': source_path,
+      'overwrite': False,
+      'partition_columns': [(partition['name'], partition['partitionValue']) for partition in partition_columns],
+    }
+    db = dbms.get(request.user)
+    sql += "\n\n%s;" % db.load_data(database, table_name, form_data, None, generate_ddl_only=True)
 
   if load_data and table_format in ('parquet', 'kudu'):
     file_format = table_format
     if table_format == 'kudu':
-      columns_list = ['`%s`' % col for col in primary_keys] + [col['name'] for col in destination['columns'] if col['name'] not in primary_keys]
+      columns_list = ['`%s`' % col for col in primary_keys + [col['name'] for col in destination['columns'] if col['name'] not in primary_keys]]
       extra_create_properties = """PRIMARY KEY (%(primary_keys)s)
-      DISTRIBUTE BY HASH INTO 16 BUCKETS
+      PARTITION BY HASH PARTITIONS 16
       STORED AS %(file_format)s
       TBLPROPERTIES(
       'kudu.num_tablet_replicas' = '1'
@@ -322,7 +346,7 @@ def _create_table_from_a_file(request, source, destination):
       }
     else:
       columns_list = ['*']
-    sql += '''\n\nCREATE TABLE `%(database)s`.`%(final_table_name)s`
+    sql += '''\n\nCREATE TABLE `%(database)s`.`%(final_table_name)s`%(comment)s
       %(extra_create_properties)s
       AS SELECT %(columns_list)s
       FROM `%(database)s`.`%(table_name)s`;''' % {
@@ -331,6 +355,7 @@ def _create_table_from_a_file(request, source, destination):
         'table_name': table_name,
         'extra_create_properties': extra_create_properties,
         'columns_list': ', '.join(columns_list),
+        'comment': ' COMMENT "%s"' % comment if comment else ''
     }
     sql += '\n\nDROP TABLE IF EXISTS `%(database)s`.`%(table_name)s`;\n' % {
         'database': database,
@@ -338,9 +363,10 @@ def _create_table_from_a_file(request, source, destination):
     }
 
   editor_type = 'impala' if table_format == 'kudu' else 'hive'
+
   on_success_url = reverse('metastore:describe_table', kwargs={'database': database, 'table': table_name})
 
-  return make_notebook(name='Execute and watch', editor_type=editor_type, statement=sql, status='ready', database=database, on_success_url=on_success_url)
+  return make_notebook(name='Execute and watch', editor_type=editor_type, statement=sql.strip(), status='ready', database=database, on_success_url=on_success_url, is_task=True)
 
 
 def _index(request, file_format, collection_name, query=None):

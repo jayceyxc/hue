@@ -23,7 +23,9 @@ from django.utils.translation import ugettext as _
 <%namespace name="layout" file="layout.mako" />
 <%namespace name="tree" file="common_tree.mako" />
 
+%if not is_embeddable:
 ${ commonheader(_('Hadoop Security'), "security", user, request) | n,unicode }
+%endif
 ${ layout.menubar(section=component) }
 
 
@@ -61,7 +63,7 @@ ${ layout.menubar(section=component) }
           <i class="fa fa-fw fa-1halfx muted" data-bind="css: {'fa-circle-o': privilegeType() != 'DATABASE', 'fa-check-circle-o': privilegeType() == 'DATABASE'}"></i>
         </a>
       </div>
-      <input type="text" data-bind="hivechooser: $data.path, enable: privilegeType() == 'DATABASE'" placeholder="dbName.tableName <CTRL+SPACE>">
+      <input type="text" data-bind="hivechooser: $data.path, enable: privilegeType() == 'DATABASE', apiHelperUser: '${ user }', apiHelperType: 'hive'" placeholder="dbName.tableName <CTRL+SPACE>">
 
       <div class="inline-block" style="vertical-align: middle">
         <a class="pointer" style="padding-top: 4px" data-bind="click: function(){ privilegeType('URI'); action('ALL'); }">
@@ -164,7 +166,7 @@ ${ layout.menubar(section=component) }
 </div>
 </script>
 
-<div class="container-fluid">
+<div id="securityComponents" class="container-fluid">
   <div class="row-fluid">
     <div class="span2">
       <div class="sidebar-nav">
@@ -430,9 +432,9 @@ ${ layout.menubar(section=component) }
 
 <div id="createRoleModal" class="modal hide fade in" role="dialog">
   <div class="modal-header">
-    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
-    <h3 data-bind="visible: ! $root.role().isEditing()">${ _('Add or select a role') }</h3>
-    <h3 data-bind="visible: $root.role().isEditing()">${ _('Edit role') }</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title" data-bind="visible: ! $root.role().isEditing()">${ _('Add or select a role') }</h2>
+    <h2 class="modal-title" data-bind="visible: $root.role().isEditing()">${ _('Edit role') }</h2>
   </div>
   <div class="modal-body" data-bind="with: $root.role, visible: showCreateRole">
 
@@ -456,16 +458,16 @@ ${ layout.menubar(section=component) }
   </div>
   <div class="modal-footer">
     <button class="btn" data-dismiss="modal" aria-hidden="true">${ _('Cancel') }</button>
-    <button data-loading-text="${ _('Saving...') }" class="btn btn-primary disable-enter" data-bind="click: $root.role().create, visible: ! $root.role().isEditing(), css: {'disabled': !$root.role().isValid()}">${ _('Save') }</button>
-    <button data-loading-text="${ _('Saving...') }" class="btn btn-primary disable-enter" data-bind="click: $root.role().update, visible: $root.role().isEditing(), css: {'disabled': !$root.role().isValid()}">${ _('Update') }</button>
+    <button data-loading-text="${ _('Saving...') }" class="btn btn-primary disable-enter" data-bind="click: $root.role().create, visible: ! $root.role().isEditing(), enable: $root.role().isValid()">${ _('Save') }</button>
+    <button data-loading-text="${ _('Saving...') }" class="btn btn-primary disable-enter" data-bind="click: $root.role().update, visible: $root.role().isEditing(), enable: $root.role().isValid()">${ _('Update') }</button>
   </div>
 </div>
 
 
 <div id="grantPrivilegeModal" class="modal hide fade in" role="dialog">
   <div class="modal-header">
-    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
-    <h3>${ _('Grant privilege') }</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${ _('Grant privilege') }</h2>
   </div>
   <div class="modal-body">
 
@@ -488,8 +490,8 @@ ${ layout.menubar(section=component) }
 
 <div id="deleteRoleModal" class="modal hide fade in" role="dialog">
   <div class="modal-header">
-    <a href="#" class="close" data-dismiss="modal">&times;</a>
-    <h3>${ _('Do you really want to delete the selected role(s)?') }</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${ _('Do you really want to delete the selected role(s)?') }</h2>
   </div>
   <div class="modal-footer">
     <button class="btn" data-dismiss="modal" aria-hidden="true">${ _('Cancel') }</button>
@@ -500,8 +502,8 @@ ${ layout.menubar(section=component) }
 
 <div id="deletePrivilegeModal" class="modal hide fade in" role="dialog">
   <div class="modal-header">
-    <a href="#" class="close" data-dismiss="modal">&times;</a>
-    <h3>${ _('Confirm the deletion?') }</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${ _('Confirm the deletion?') }</h2>
   </div>
   <div class="modal-body">
     ${ _('Sentry will recursively delete the SERVER or DATABASE privileges you marked for deletion.') }
@@ -515,8 +517,8 @@ ${ layout.menubar(section=component) }
 
 <div id="bulkActionsModal" class="modal hide fade in" role="dialog">
   <div class="modal-header">
-    <a href="#" class="close" data-dismiss="modal">&times;</a>
-    <h3>${ _('Select one operation') }</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${ _('Select one operation') }</h2>
   </div>
   <div class="modal-body" style="overflow-x: hidden">
 
@@ -584,12 +586,12 @@ ${ layout.menubar(section=component) }
 
 <div id="chooseFile" class="modal hide fade">
   <div class="modal-header">
-      <a href="#" class="close" data-dismiss="modal">&times;</a>
-      <h3>${_('Choose a file')}</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${_('Choose a file')}</h2>
   </div>
   <div class="modal-body">
-      <div id="filechooser">
-      </div>
+    <div id="filechooser">
+    </div>
   </div>
   <div class="modal-footer">
   </div>
@@ -606,7 +608,7 @@ ${ layout.menubar(section=component) }
 
 <%def name="withPrivilegesPullRight()">
   <div class="pull-right">
-    <i class="fa fa-shield" data-bind="visible: withPrivileges()" style="color: #338bb8" title="${ _('Has some privileges') }"></i>&nbsp;
+    <i class="fa fa-shield" data-bind="visible: withPrivileges()" style="color: #0B7FAD" title="${ _('Has some privileges') }"></i>&nbsp;
     <i class="fa fa-file-o muted" data-bind="click: $root.assist.showAuthorizable ,visible: isTable()"></i>
   </div>
 </%def>
@@ -615,14 +617,16 @@ ${ layout.menubar(section=component) }
 ${ tree.import_templates(itemClick='$root.assist.setPath', iconClick='$root.assist.togglePath', itemSelected='$root.assist.path() == path()', styleModifier='withPrivileges', iconModifier=treeIcons, anchorProperty='path', itemChecked='isChecked', styleModifierPullRight=withPrivilegesPullRight) }
 
 
-<script src="${ static('desktop/ext/js/routie-0.3.0.min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/js/hue.routie.js') }" type="text/javascript" charset="utf-8"></script>
+<script>
+  routie.setPathname('/security');
+</script>
 
 <script src="${ static('security/js/sentry.ko.js') }" type="text/javascript" charset="utf-8"></script>
-
 <script src="${ static('desktop/js/jquery.filechooser.js') }" type="text/javascript" charset="utf-8"></script>
 
 
-<script type="text/javascript" charset="utf-8">
+<script type="text/javascript">
 
     function deletePrivilegeModal(role) {
       var cascadeDeletes = $.grep(role.privilegesChanged(), function(privilege) {
@@ -637,7 +641,7 @@ ${ tree.import_templates(itemClick='$root.assist.setPath', iconClick='$root.assi
     }
 
     var viewModel = new SentryViewModel(${ initial | n,unicode });
-    ko.applyBindings(viewModel);
+    ko.applyBindings(viewModel, $('#securityComponents')[0]);
 
     $(document).ready(function () {
       var _initialPath = viewModel.getPathHash();
@@ -663,6 +667,8 @@ ${ tree.import_templates(itemClick='$root.assist.setPath', iconClick='$root.assi
 
       $("#path").jHueGenericAutocomplete({
         skipColumns: true,
+        apiHelperUser: '${ user }',
+        apiHelperType: 'hive',
         serverType: viewModel.component().toUpperCase(),
         home: viewModel.assist.path(),
         onPathChange: function (path) {
@@ -721,7 +727,7 @@ ${ tree.import_templates(itemClick='$root.assist.setPath', iconClick='$root.assi
           highlightMainMenu(mainSection);
           viewModel.updateSectionHash(mainSection);
         }
-        logGA(mainSection);
+        hueAnalytics.log('security/common', mainSection);
       }
 
       function highlightMainMenu(mainSection) {
@@ -756,7 +762,9 @@ ${ tree.import_templates(itemClick='$root.assist.setPath', iconClick='$root.assi
       });
 
       window.onpopstate = function() {
-        viewModel.assist.path(viewModel.getPathHash());
+        if (window.location.pathname.indexOf('/security') > -1) {
+          viewModel.assist.path(viewModel.getPathHash());
+        }
       };
 
       $("#createRoleModal").modal({
@@ -849,4 +857,6 @@ ${ tree.import_templates(itemClick='$root.assist.setPath', iconClick='$root.assi
     });
 </script>
 
+%if not is_embeddable:
 ${ commonfooter(request, messages) | n,unicode }
+%endif

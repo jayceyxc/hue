@@ -14,16 +14,18 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
-from desktop.views import commonheader, commonfooter
-from desktop.lib.django_util import extract_field_data
 import urllib
-from django.utils.translation import ugettext as _
-%>
 
+from django.utils.translation import ugettext as _
+from desktop.lib.django_util import extract_field_data
+from desktop.views import commonheader, commonfooter
+%>
 
 <%namespace name="layout" file="layout.mako" />
 
+%if not is_embeddable:
 ${ commonheader(_('Hue Groups'), "useradmin", user, request) | n,unicode }
+%endif
 ${layout.menubar(section='groups')}
 
 <%def name="render_field(field)">
@@ -59,9 +61,9 @@ ${layout.menubar(section='groups')}
     <form id="editForm" action="${urllib.quote(action)}" method="POST" class="form form-horizontal" autocomplete="off">
       ${ csrf_token(request) | n,unicode }
       <fieldset>
-          % for field in form:
-        ${render_field(field)}
-          % endfor
+        % for field in form:
+          ${render_field(field)}
+        % endfor
       </fieldset>
       <br/>
 
@@ -75,13 +77,16 @@ ${layout.menubar(section='groups')}
               <input type="submit" class="btn btn-primary" value="${_('Add group')}"/>
           % endif
         % endif
+        % if is_embeddable:
+          <input type="hidden" value="true" name="is_embeddable" />
+        % endif
         <a href="/useradmin/groups" class="btn">${_('Cancel')}</a>
       </div>
     </form>
   </div>
 </div>
 
-<script type="text/javascript" charset="utf-8">
+<script type="text/javascript">
   $(document).ready(function () {
     $("#id_members").jHueSelector({
       selectAllLabel: "${_('Select all')}",
@@ -102,4 +107,6 @@ ${layout.menubar(section='groups')}
 
 ${layout.commons()}
 
+%if not is_embeddable:
 ${ commonfooter(request, messages) | n,unicode }
+%endif

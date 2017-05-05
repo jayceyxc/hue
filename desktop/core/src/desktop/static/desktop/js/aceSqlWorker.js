@@ -14,8 +14,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-importScripts('/static/desktop/js/autocomplete/sql.js?version=9');
-importScripts('/static/desktop/js/sqlFunctions.js?version=9');
+var version = 17;
+importScripts('/static/desktop/js/autocomplete/sqlParseSupport.js?version=' + version);
+importScripts('/static/desktop/js/autocomplete/sql.js?version=' + version);
+importScripts('/static/desktop/js/sqlFunctions.js?version=' + version);
 
 (function () {
 
@@ -29,30 +31,8 @@ importScripts('/static/desktop/js/sqlFunctions.js?version=9');
     clearTimeout(this.throttle);
     this.throttle = setTimeout(function () {
       if (msg.data) {
-        var errors = [];
-        var locations = [];
-        var lineCount = 0;
-        msg.data.text.split(';').forEach(function (statement) {
-          var parseResult = sql.parseSql(statement + ' ', '', msg.data.type, false);
-          if (parseResult.errors) {
-            parseResult.errors.forEach(function (error) {
-              if (error.token.indexOf('CURSOR') === -1) {
-                error.loc.first_line += lineCount;
-                error.loc.last_line += lineCount;
-                errors.push(error);
-              }
-            })
-          }
-          if (parseResult.locations) {
-            parseResult.locations.forEach(function (location) {
-              location.location.first_line += lineCount;
-              location.location.last_line += lineCount;
-              locations.push(location);
-            })
-          }
-          lineCount += statement.split(/\r\n|\r|\n/).length - 1;
-        });
-        postMessage({ errors: errors, locations: locations });
+        var parseResult = sql.parseSql(msg.data.text + ' ', '', msg.data.type, false);
+        postMessage(parseResult);
       }
     }, 400);
   }

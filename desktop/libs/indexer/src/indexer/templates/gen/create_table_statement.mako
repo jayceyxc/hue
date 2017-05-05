@@ -23,9 +23,11 @@ def col_type(col):
   elif col["type"] == "map":
     return "map <%s, %s>" % (col["nested"][0]["keyType"], '%s' % col_type(col["nested"][0]) if col["type"] in ('array', 'struct', 'map') else col["type"])
   elif col["type"] == "char":
-    return "char(%d)" % col["length"]
+    return "char(%s)" % col["length"]
   elif col["type"] == "varchar":
-    return "varchar(%d)" % col["length"]
+    return "varchar(%s)" % col["length"]
+  elif col["type"] == "decimal":
+    return "decimal(%s, %s)" % (col["precision"], col["scale"])
   return col["type"]
 
 %>
@@ -57,7 +59,7 @@ COMMENT "${col["comment"]|n}" \
 % if table.get('primary_keys'):
 , PRIMARY KEY (${ ', '.join(table['primary_keys']) })
 % endif
-) \
+)\
 </%def>\
 
 <%def name="kudu_partition(partition)">
@@ -84,14 +86,14 @@ EXTERNAL \
 % endif
 TABLE ${ '`%s`.`%s`' % (database, table["name"]) | n }
 ${ column_list(table, columns) | n } \
+% if kudu_partition_columns  and table.get('file_format') == 'kudu':
+PARTITION BY ${ ', '.join([kudu_partition(partition) for partition in kudu_partition_columns]) | n }
+% endif
 % if table["comment"]:
 COMMENT "${table["comment"] | n }"
 % endif
 % if partition_columns and table.get('file_format') != 'kudu':
 PARTITIONED BY ${ column_list(table, partition_columns) | n }
-% endif
-% if kudu_partition_columns  and table.get('file_format') == 'kudu':
-PARTITION BY ${ ', '.join([kudu_partition(partition) for partition in kudu_partition_columns]) | n }
 % endif
 ## TODO: CLUSTERED BY here
 ## TODO: SORTED BY...INTO...BUCKETS here
@@ -102,10 +104,11 @@ ROW FORMAT \
 %     if table.has_key('field_terminator'):
     FIELDS TERMINATED BY '${table["field_terminator"] | n}'
 %     endif
-%     if table.has_key('collection_terminator'):
+## [LINES TERMINATED BY char]
+%     if table.get('collection_terminator') is not None:
     COLLECTION ITEMS TERMINATED BY '${table["collection_terminator"] | n}'
 %     endif
-%     if table.has_key('map_key_terminator'):
+%     if table.get('map_key_terminator') is not None:
     MAP KEYS TERMINATED BY '${table["map_key_terminator"] | n}'
 %     endif
 %   else:

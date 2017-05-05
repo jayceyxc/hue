@@ -29,10 +29,7 @@ ${ commonheader(_('Create table from file'), 'metastore', user, request) | n,uni
 ${ layout.metastore_menubar() }
 
 <script src="${ static('desktop/ext/js/jquery/plugins/jquery-ui-1.10.4.custom.min.js') }"></script>
-<script src="${ static('desktop/js/jquery.huedatatable.js') }"></script>
-<script src="${ static('desktop/ext/js/d3.v3.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/selectize.min.js') }"></script>
-<script src="${ static('desktop/js/apiHelper.js') }"></script>
 <script src="${ static('metastore/js/metastore.ko.js') }"></script>
 <script src="${ static('desktop/js/ko.charts.js') }"></script>
 <script src="${ static('desktop/ext/js/knockout-sortable.min.js') }"></script>
@@ -75,10 +72,6 @@ ${ assist.assistPanel() }
               params: {
                 user: '${user.username}',
                 sql: {
-                  sourceTypes: [{
-                    name: 'hive',
-                    type: 'hive'
-                  }],
                   navigationSettings: {
                     openItem: false,
                     showStats: true
@@ -99,7 +92,7 @@ ${ assist.assistPanel() }
                 <a href="${ url('beeswax:create_table', database=database) }" title="${_('Create a new table manually')}" class="inactive-action margin-left-10"><i class="fa fa-wrench"></i></a>
               </div>
 
-              <ul id="breadcrumbs" class="nav nav-pills hueBreadcrumbBar">
+              <ul id="breadcrumbs" class="nav nav-pills hue-breadcrumbs-bar">
                 <li>
                   <a href="${url('metastore:databases')}">${_('Databases')}</a><span class="divider">&gt;</span>
                 </li>
@@ -143,7 +136,7 @@ ${ assist.assistPanel() }
                 <div class="control-group" style="margin-top: 10px">
                   <div class="controls">
                     <div class="scrollable">
-                      <table class="table table-striped">
+                      <table class="table table-condensed">
                         <thead>
                           <th id="column_names" style="width:210px">${ _('Column name') }</th>
                           <th style="width:210px">${ _('Column Type') }</th>
@@ -225,13 +218,13 @@ ${ assist.assistPanel() }
   }
 </style>
 
-<script type="text/javascript" charset="utf-8">
+<script type="text/javascript">
   (function () {
     ko.options.deferUpdates = true;
 
-    function MetastoreViewModel(options) {
+    function ImportWizardDefineColumnsViewModel() {
       var self = this;
-      self.apiHelper = ApiHelper.getInstance(options);
+      self.apiHelper = ApiHelper.getInstance();
       self.assistAvailable = ko.observable(true);
       self.isLeftPanelVisible = ko.observable();
       self.apiHelper.withTotalStorage('assist', 'assist_panel_visible', self.isLeftPanelVisible, true);
@@ -248,15 +241,7 @@ ${ assist.assistPanel() }
 
     $(document).ready(function () {
 
-      var options = {
-        user: '${ user.username }',
-        i18n: {
-          errorLoadingDatabases: "${ _('There was a problem loading the databases') }",
-          errorLoadingTablePreview: "${ _('There was a problem loading the table preview.') }"
-        }
-      }
-
-      var viewModel = new MetastoreViewModel(options);
+      var viewModel = new ImportWizardDefineColumnsViewModel();
 
       ko.applyBindings(viewModel);
 

@@ -20,208 +20,262 @@ from desktop.views import _ko
 %>
 
 <%def name="hueAceAutocompleter()">
-  <style>
-    .hue-ace-autocompleter {
-      position: fixed;
-      z-index: 100000;
-      height: 250px;
-      border: 1px solid #DDD;
-      display: flex;
-      flex-direction: column;
-
-      border-radius: 2px;
-      background-color: #FFF;
-      -webkit-box-shadow: 0 2px 8px rgba(0,0,0,.18);
-      box-shadow: 0 2px 6px 0 rgba(0, 0, 0, 0.18), 0 2px 8px 0 rgba(0, 0, 0, 0.13);
-    }
-
-    .autocompleter-header {
-      flex: 1 1 22px;
-      padding: 5px;
-      background-color: #F9F9F9;
-    }
-
-    .autocompleter-list {
-      display: inline-block;
-      position: relative;
-      overflow-y: auto;
-      width: 300px;
-      height: 100%;
-    }
-
-    .autocompleter-list > div {
-      height: 19px;
-      clear: both;
-      background-color: #FFF;
-      padding:3px;
-      cursor: pointer;
-    }
-
-    .autocompleter-list > div:hover {
-      background-color: #DBE8F1;
-    }
-
-    .autocompleter-list > div.selected {
-      background-color: #DBE8F1;
-    }
-
-    .autocompleter-spinner {
-      position: relative;
-      float: right;
-      width: 15px;
-      margin-top: 1px;
-    }
-
-    .autocompleter-entries {
-      position: relative;
-      flex: 1 1 100%;
-      overflow: hidden;
-    }
-
-    .autocompleter-details {
-      vertical-align: top;
-      display: inline-block;
-      width: 300px;
-      overflow-y: auto;
-    }
-
-    .autocompleter-categories {
-      display: inline-block;
-    }
-
-    .autocompleter-categories > div {
-      display: inline-block;
-      line-height: 14px;
-      border-bottom: 2px solid transparent;
-      cursor: pointer;
-      padding: 0 3px;
-    }
-
-    .autocompleter-categories > div.active {
-      display: inline-block;
-      border-bottom: 2px solid #338BB8;
-      cursor: default;
-    }
-
-    .autocompleter-suggestion {
-      font: 12px/normal 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;direction: ltr;
-      line-height: 18px;
-    }
-
-    .autocompleter-dot {
-      margin-top: 5px;
-      margin-right: 5px;
-      width: 8px;
-      height: 8px;
-      border-radius: 4px;
-    }
-  </style>
-
   <script type="text/html" id="hue-ace-autocompleter">
-    <!-- ko if: active -->
+    <!-- ko if: active() && suggestions.filtered().length !== 0 -->
     <div class="hue-ace-autocompleter" data-bind="style: { top: top() + 'px', left: left() + 'px' }">
-      <!-- ko if: suggestions.availableCategories().length > 1 || suggestions.loading() -->
-      <div class="autocompleter-header">
-        <!-- ko if: suggestions.availableCategories().length > 1 -->
-        <div class="autocompleter-categories" data-bind="foreach: suggestions.availableCategories()">
-          <div data-bind="text: label, css: { 'active': $parent.suggestions.activeCategory() === $data }, style: { 'border-color': $parent.suggestions.activeCategory() === $data ? color : 'transparent' }, click: function (data, event) { $parent.suggestions.activeCategory($data); event.stopPropagation(); }"></div>
+      <div class="autocompleter-suggestions">
+        <!-- ko if: suggestions.availableCategories().length > 1 || suggestions.loading() -->
+        <div class="autocompleter-header">
+          <!-- ko if: suggestions.availableCategories().length > 1 -->
+          <div class="autocompleter-categories" data-bind="foreach: suggestions.availableCategories()">
+            <div data-bind="text: label, css: { 'active': $parent.suggestions.activeCategory() === $data }, style: { 'border-color': $parent.suggestions.activeCategory() === $data ? color : 'transparent' }, click: function (data, event) { $parent.suggestions.activeCategory($data); event.stopPropagation(); $parent.editor().focus(); }"></div>
+          </div>
+          <!-- /ko -->
+          <div class="autocompleter-spinner"><!-- ko hueSpinner: { spin: suggestions.loading, size: 'small' } --><!-- /ko --></div>
         </div>
         <!-- /ko -->
-        <div class="autocompleter-spinner"><!-- ko hueSpinner: { spin: suggestions.loading, size: 'small' } --><!-- /ko --></div>
-      </div>
-      <!-- /ko -->
-      <div class="autocompleter-entries">
-        <div class="autocompleter-list" data-bind="foreach: suggestions.filtered">
-          <div data-bind="click: function () { $parent.selectedIndex($index()); $parent.insertSuggestion(); $parent.editor().focus(); }, css: { 'selected': $index() === $parent.selectedIndex() }">
-            <div class="pull-left autocompleter-dot" data-bind="style: { 'background-color': category.color }"></div>
-            <div class="autocompleter-suggestion pull-left" data-bind="matchedText: { suggestion: $data, filter: $parent.suggestions.filter }"></div>
-            <div class="autocompleter-suggestion pull-right" data-bind="text: meta"></div>
+        <div class="autocompleter-entries" data-bind="foreach: suggestions.filtered">
+          <div class="autocompleter-suggestion" data-bind="click: function () { $parent.selectedIndex($index()); $parent.insertSuggestion(); $parent.editor().focus(); },
+              css: { 'selected': $index() === $parent.selectedIndex() },
+              event: { 'mouseover': function () { $parent.hoveredIndex($index()); }, 'mouseout': function () { $parent.hoveredIndex(null); } }">
+            <div class="autocompleter-suggestion-value">
+              <div class="autocompleter-dot" data-bind="style: { 'background-color': category.color }"></div> <span data-bind="matchedText: { suggestion: $data, filter: $parent.suggestions.filter }"></span> <!-- ko if: details && details.primary_key === 'true' --><i class="fa fa-key"></i><!-- /ko -->
+            </div>
+            <div class="autocompleter-suggestion-meta"><!-- ko if: popular --><i class="fa fa-star-o popular-color"></i> <!-- /ko --><span data-bind="text: meta"></span></div>
           </div>
         </div>
-        <!-- ko if: selectedEntry() && selectedEntry().details -->
-        <div class="autocompleter-details" data-bind="template: { name: 'autocomplete-details-' + selectedEntry().detailsTemplate, data: selectedEntry }"></div>
-        <!-- /ko -->
       </div>
+      <!-- ko if: focusedEntry() && focusedEntry().details -->
+      <!-- ko template: { name: 'autocomplete-details-' + focusedEntry().category.detailsTemplate, data: focusedEntry } --><!-- /ko -->
+      <!-- /ko -->
     </div>
     <!-- /ko -->
   </script>
 
   <script type="text/html" id="autocomplete-details-keyword">
-    <pre data-bind="text: ko.mapping.toJSON(details)"></pre>
-  </script>
-
-  <script type="text/html" id="autocomplete-details-column-alias">
-    <pre data-bind="text: ko.mapping.toJSON(details)"></pre>
   </script>
 
   <script type="text/html" id="autocomplete-details-udf">
-    <pre data-bind="text: ko.mapping.toJSON(details)"></pre>
+    <div class="autocompleter-details">
+      <div class="autocompleter-header"><i class="fa fa-fw fa-superscript"></i> <span data-bind="text: details.signature.substring(0, details.signature.indexOf('('));"></span></div>
+      <div class="autocompleter-details-contents">
+        <div class="autocompleter-details-contents-inner">
+          <div class="details-code" data-bind="text: details.signature"></div>
+          <div class="details-comment" data-bind="text: details.description"></div>
+        </div>
+      </div>
+    </div>
+  </script>
+
+  <script type="text/html" id="autocomplete-details-database">
   </script>
 
   <script type="text/html" id="autocomplete-details-table">
-    <pre data-bind="text: ko.mapping.toJSON(details)"></pre>
+    <div class="autocompleter-details">
+      <div class="autocompleter-header"><i class="fa fa-fw" data-bind="css: { 'fa-eye': details.type.toLowerCase() !== 'table', 'fa-table': details.type.toLowerCase() === 'table' }"></i> <span data-bind="text: details.name"></span></div>
+      <div class="autocompleter-details-contents">
+        <div class="autocompleter-details-contents-inner">
+          <div class="details-attribute" ><i class="fa fa-database fa-fw"></i> <span data-bind="text: details.database"></span></div>
+          <!-- ko if: typeof details.popularity !== 'undefined' -->
+          <div class="details-popularity margin-left-5" data-bind="tooltip: { title: '${ _ko('Popularity') } ' + details.popularity.relativePopularity + '%', placement: 'bottom' }"><i class="fa fa-fw fa-star-o popular-color"></i>
+            <div class="progress">
+              <div class="bar" data-bind="style: { 'width': details.popularity.relativePopularity + '%' }"></div>
+            </div>
+          </div>
+          <!-- /ko -->
+          <!-- ko if: typeof details.comment !== 'undefined' && details.comment !== null -->
+          <div class="details-comment" data-bind="matchedText: { suggestion: $data, filter: $parent.suggestions.filter, isComment: true }"></div>
+          <!-- /ko -->
+        </div>
+      </div>
+    </div>
   </script>
 
   <script type="text/html" id="autocomplete-details-column">
-    <pre data-bind="text: ko.mapping.toJSON(details)"></pre>
+    <!-- ko if: typeof details.name !== 'undefined' -->
+    <div class="autocompleter-details">
+      <div class="autocompleter-header"><i class="fa fa-fw fa-columns"></i> <span data-bind="text: details.name"></span></div>
+      <div class="autocompleter-details-contents">
+        <div class="autocompleter-details-contents-inner">
+          <div class="details-attribute" ><i class="fa fa-table fa-fw"></i> <span data-bind="text: details.database"></span>.<span data-bind="text: details.table"></span></div>
+          <!-- ko if: typeof details.primary_key !== 'undefined' && details.primary_key === 'true' -->
+          <div class="details-attribute" ><i class="fa fa-key fa-fw"></i> ${ _('Primary key') }</div>
+          <!-- /ko -->
+          <!-- ko if: typeof details.popularity !== 'undefined' -->
+          <br/>
+          <div class="details-popularity margin-top-10" data-bind="tooltip: { title: '${ _ko('Popularity') } ' + details.popularity.relativePopularity + '%', placement: 'bottom' }"><i class="fa fa-fw fa-star-o popular-color"></i>
+            <div class="progress">
+              <div class="bar" data-bind="style: { 'width': details.popularity.relativePopularity + '%' }"></div>
+            </div>
+          </div>
+          <!-- /ko -->
+          <!-- ko if: typeof details.comment !== 'undefined' && details.comment !== null -->
+          <div class="details-comment" data-bind="matchedText: { suggestion: $data, filter: $parent.suggestions.filter, isComment: true }"></div>
+          <!-- /ko -->
+        </div>
+      </div>
+    </div>
+    <!-- /ko -->
+  </script>
+
+  <script type="text/html" id="autocomplete-details-variable">
   </script>
 
   <script type="text/html" id="autocomplete-details-hdfs">
-    <pre data-bind="text: ko.mapping.toJSON(details)"></pre>
+    <div class="autocompleter-details">
+      <div class="autocompleter-details-contents-inner">
+        <div class="autocompleter-header"><i class="fa fa-fw" data-bind="css: { 'fa-folder-o': details.type === 'dir', 'fa-file-o': details.type !== 'dir' }"></i> <span data-bind="text: details.name"></span></div>
+        <div class="autocompleter-details-contents" data-bind="template: { name: 'hdfs-details-content', data: { definition: details } }"></div>
+      </div>
+    </div>
   </script>
 
   <script type="text/html" id="autocomplete-details-join">
-    <pre data-bind="text: ko.mapping.toJSON(details)"></pre>
+    <div class="autocompleter-details">
+      <div class="autocompleter-header"><i class="fa fa-fw fa-star-o"></i> ${ _('Popular join')}</div>
+      <div class="autocompleter-details-contents">
+        <div class="autocompleter-details-contents-inner">
+          <div class="details-code" data-bind="text: value"></div>
+          <div class="details-popularity margin-top-10" data-bind="tooltip: { title: '${ _ko('Popularity') } ' + details.relativePopularity + '%', placement: 'bottom' }"><i class="fa fa-fw fa-star-o popular-color"></i>
+            <div class="progress">
+              <div class="bar" data-bind="style: { 'width': details.relativePopularity + '%' }"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </script>
 
   <script type="text/html" id="autocomplete-details-join-condition">
-    <pre data-bind="text: ko.mapping.toJSON(details)"></pre>
+    <div class="autocompleter-details">
+      <div class="autocompleter-header"><i class="fa fa-fw fa-star-o"></i> ${ _('Popular join condition')}</div>
+      <div class="autocompleter-details-contents">
+        <div class="autocompleter-details-contents-inner">
+          <div class="details-code" data-bind="text: value"></div>
+          <div class="details-popularity margin-top-10" data-bind="tooltip: { title: '${ _ko('Popularity') } ' + details.relativePopularity + '%', placement: 'bottom' }"><i class="fa fa-fw fa-star-o popular-color"></i>
+            <div class="progress">
+              <div class="bar" data-bind="style: { 'width': details.relativePopularity + '%' }"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </script>
 
-  <script type="text/html" id="autocomplete-details-aggregate-function">
-    <pre data-bind="text: ko.mapping.toJSON(details)"></pre>
+  <script type="text/html" id="autocomplete-details-agg-udf">
+    <div class="autocompleter-details">
+      <div class="autocompleter-header"><i class="fa fa-fw fa-superscript"></i> ${ _('Popular aggregate')} - <span data-bind="text: details.aggregateFunction"></span></div>
+      <div class="autocompleter-details-contents">
+        <div class="autocompleter-details-contents-inner">
+          <div class="details-code" data-bind="text: value"></div>
+          <div class="details-popularity margin-top-10" data-bind="tooltip: { title: '${ _ko('Popularity') } ' + details.relativePopularity + '%', placement: 'bottom' }"><i class="fa fa-fw fa-star-o popular-color"></i>
+            <div class="progress">
+              <div class="bar" data-bind="style: { 'width': details.relativePopularity + '%' }"></div>
+            </div>
+          </div>
+          <div class="details-comment" data-bind="text: details.function.description"></div>
+        </div>
+      </div>
+    </div>
+  </script>
+
+  <script type="text/html" id="autocomplete-details-value">
+  </script>
+
+  <script type="text/html" id="autocomplete-details-identifier">
+  </script>
+
+  <script type="text/html" id="autocomplete-details-cte">
   </script>
 
   <script type="text/html" id="autocomplete-details-group-by">
-    <pre data-bind="text: ko.mapping.toJSON(details)"></pre>
+    <div class="autocompleter-details">
+      <div class="autocompleter-header"><i class="fa fa-fw fa-star-o"></i> ${ _('Popular group by')}</div>
+      <div class="autocompleter-details-contents">
+        <div class="autocompleter-details-contents-inner">
+          <div class="details-code" data-bind="text: value"></div>
+          <div class="details-popularity margin-top-10" data-bind="tooltip: { title: '${ _ko('Workload percent') } ' + details.workloadPercent + '%', placement: 'bottom' }"><i class="fa fa-fw fa-star-o popular-color"></i>
+            <div class="progress">
+              <div class="bar" data-bind="style: { 'width': details.workloadPercent + '%' }"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </script>
 
   <script type="text/html" id="autocomplete-details-order-by">
-    <pre data-bind="text: ko.mapping.toJSON(details)"></pre>
+    <div class="autocompleter-details">
+      <div class="autocompleter-header"><i class="fa fa-fw fa-star-o"></i> ${ _('Popular order by')}</div>
+      <div class="autocompleter-details-contents">
+        <div class="autocompleter-details-contents-inner">
+          <div class="details-code" data-bind="text: value"></div>
+          <div class="details-popularity margin-top-10" data-bind="tooltip: { title: '${ _ko('Workload percent') } ' + details.workloadPercent + '%', placement: 'bottom' }"><i class="fa fa-fw fa-star-o popular-color"></i>
+            <div class="progress">
+              <div class="bar" data-bind="style: { 'width': details.workloadPercent + '%' }"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </script>
 
   <script type="text/html" id="autocomplete-details-filter">
-    <pre data-bind="text: ko.mapping.toJSON(details)"></pre>
+    <div class="autocompleter-details">
+      <div class="autocompleter-header"><i class="fa fa-fw fa-star-o"></i> ${ _('Popular filter')}</div>
+      <div class="autocompleter-details-contents">
+        <div class="autocompleter-details-contents-inner">
+          <div class="details-code" data-bind="text: value"></div>
+          <div class="details-popularity margin-top-10" data-bind="tooltip: { title: '${ _ko('Popularity') } ' + details.relativePopularity + '%', placement: 'bottom' }"><i class="fa fa-fw fa-star-o popular-color"></i>
+            <div class="progress">
+              <div class="bar" data-bind="style: { 'width': details.relativePopularity + '%' }"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </script>
 
 
-  <script type="text/javascript" charset="utf-8">
+  <script type="text/javascript">
     (function () {
 
       var aceUtil = ace.require('ace/autocomplete/util');
       var HashHandler = ace.require('ace/keyboard/hash_handler').HashHandler;
 
       ko.bindingHandlers.matchedText = {
-        update: function (element, valueAccessor) {
+        init: function (element, valueAccessor) {
           var options = valueAccessor();
           var $element = $(element);
-          $element.empty();
-          var suggestion = options.suggestion;
-          if (options.filter() && suggestion.matchIndex > -1) {
-            var before = suggestion.value.substring(0, suggestion.matchIndex);
-            var match = suggestion.value.substring(suggestion.matchIndex, suggestion.matchIndex + suggestion.matchLength);
-            var after = suggestion.value.substring(suggestion.matchIndex + suggestion.matchLength);
-            $element.append(document.createTextNode(before));
-            $('<b>').text(match).appendTo($element);
-            $element.append(document.createTextNode(after));
-          } else {
-            $element.text(suggestion.value);
-          }
+
+          var refresh = function () {
+            $element.empty();
+            var suggestion = options.suggestion;
+            var value = options.isComment ? suggestion.details.comment : suggestion.value;
+
+            if (options.filter() && suggestion.matchIndex > -1 && ((!options.isComment && !suggestion.matchComment) || (options.isComment && suggestion.matchComment))) {
+              var before = value.substring(0, suggestion.matchIndex);
+              var match = value.substring(suggestion.matchIndex, suggestion.matchIndex + suggestion.matchLength);
+              var after = value.substring(suggestion.matchIndex + suggestion.matchLength);
+              $element.append(document.createTextNode(before));
+              $('<b>').text(match).appendTo($element);
+              $element.append(document.createTextNode(after));
+            } else {
+              $element.text(value);
+            }
+          };
+
+          refresh();
+
+          // matchIndex and matchLength are not observable, hence the pubsub to update
+          var updatePubSub = huePubSub.subscribe('hue.ace.autocompleter.match.updated', refresh);
+          ko.utils.domNodeDisposal.addDisposeCallback(element, updatePubSub.remove)
         }
       };
 
       function HueAceAutocompleter (params, element) {
         var self = this;
+        self.disposeFunctions = [];
         self.editor = params.editor;
         self.snippet = params.snippet;
 
@@ -233,10 +287,11 @@ from desktop.views import _ko
         self.left = ko.observable(1);
 
         self.selectedIndex = ko.observable(0);
+        self.hoveredIndex = ko.observable(null);
 
-        self.selectedEntry = ko.pureComputed(function () {
+        self.focusedEntry = ko.pureComputed(function () {
           if (self.suggestions.filtered().length > 0) {
-            return self.suggestions.filtered()[self.selectedIndex()];
+            return self.suggestions.filtered()[self.hoveredIndex() || self.selectedIndex()];
           }
           return null;
         });
@@ -296,6 +351,9 @@ from desktop.views import _ko
           } else {
             changeTimeout = window.setTimeout(function () {
               self.suggestions.filter(self.editor().session.getTextRange({ start: self.base, end: self.editor().getCursorPosition() }));
+              if (self.suggestions.filtered().length === 0) {
+                self.detach();
+              }
             }, 200);
           }
         };
@@ -314,14 +372,11 @@ from desktop.views import _ko
           }
         };
 
-        self.detach = function () {
-          if (!self.active()) {
-            return;
-          }
-          self.active(false);
-          self.base.detach();
-          self.base = null;
+        var positionInterval = -1;
+
+        var disposeEventHanders = function () {
           window.clearTimeout(changeTimeout);
+          window.clearInterval(positionInterval);
           $(document).off('click', closeOnClickOutside);
           self.editor().keyBinding.removeKeyboardHandler(self.keyboardHandler);
           self.editor().off('changeSelection', self.changeListener);
@@ -329,15 +384,38 @@ from desktop.views import _ko
           self.editor().off('mousewheel', self.mousewheelListener);
         };
 
+        self.detach = function () {
+          disposeEventHanders();
+          if (!self.active()) {
+            return;
+          }
+          self.active(false);
+          self.base.detach();
+          self.base = null;
+        };
+
         self.attach = function () {
+          disposeEventHanders();
           $(document).on('click', closeOnClickOutside);
           self.editor().keyBinding.addKeyboardHandler(self.keyboardHandler);
           self.editor().on('changeSelection', self.changeListener);
           self.editor().on('mousedown', self.mousedownListener);
           self.editor().on('mousewheel', self.mousewheelListener);
+          var $container = $(self.editor().container);
+          var initialOffset = $container.offset();
+          var initialDevicePixelRation = window.devicePixelRatio; // Detect zoom changes
+          positionInterval = window.setInterval(function () {
+            var newOffset = $container.offset();
+            if (initialDevicePixelRation !== window.devicePixelRatio) {
+              initialOffset = newOffset;
+              initialDevicePixelRation = window.devicePixelRatio;
+            } else if (Math.abs(newOffset.top - initialOffset.top) > 20 || Math.abs(newOffset.left - initialOffset.left) > 20) {
+              self.detach();
+            }
+          }, 300);
         };
 
-        huePubSub.subscribe('hue.ace.autocompleter.done', function () {
+        var autocompleterDoneSub = huePubSub.subscribe('hue.ace.autocompleter.done', function () {
           window.setTimeout(function () {
             if (self.active() && self.suggestions.filtered().length === 0) {
               self.detach();
@@ -345,7 +423,11 @@ from desktop.views import _ko
           }, 0);
         });
 
-        huePubSub.subscribe('hue.ace.autocompleter.show', function (data) {
+        self.disposeFunctions.push(function () {
+          autocompleterDoneSub.remove();
+        });
+
+        var autocompleterShowSub = huePubSub.subscribe('hue.ace.autocompleter.show', function (data) {
           var session = self.editor().getSession();
           var pos = self.editor().getCursorPosition();
           var line = session.getLine(pos.row);
@@ -353,12 +435,7 @@ from desktop.views import _ko
           var newBase = session.doc.createAnchor(pos.row, pos.column - prefix.length);
           self.top(data.position.top + data.lineHeight + 3);
           self.left(data.position.left);
-          if (self.active()) {
-            if (!self.base || newBase.column !== self.base.column || newBase.row !== self.base.row) {
-              self.autocompleter.autocomplete();
-            }
-            self.detach();
-          } else {
+          if (!self.active() || (!self.base || newBase.column !== self.base.column || newBase.row !== self.base.row)) {
             self.autocompleter.autocomplete();
           }
           newBase.$insertRight = true;
@@ -369,11 +446,26 @@ from desktop.views import _ko
           self.selectedIndex(0);
         });
 
-        huePubSub.subscribe('hue.ace.autocompleter.hide', function () {
+        self.disposeFunctions.push(function () {
+          autocompleterShowSub.remove();
+        });
+
+        var autocompleterHideSub = huePubSub.subscribe('hue.ace.autocompleter.hide', function () {
           self.detach();
         });
 
+        self.disposeFunctions.push(function () {
+          autocompleterHideSub.remove();
+        });
       }
+
+      HueAceAutocompleter.prototype.dispose = function () {
+        var self = this;
+        self.disposeFunctions.forEach(function (disposeFunction) {
+          disposeFunction();
+        })
+        self.detach();
+      };
 
       HueAceAutocompleter.prototype.insertSuggestion = function () {
         var self = this;
@@ -388,6 +480,12 @@ from desktop.views import _ko
             self.editor().session.remove(range);
           }
         }
+        // TODO: Only replace when editing identifiers (using parse locations)
+##         var match = self.editor().getTextAfterCursor().match(/^[^\s.]+/);
+##         if (match) {
+##           self.editor().removeTextAfterCursor(match[0].length);
+##         }
+        // TODO: Move cursor handling for '? FROM tbl' here
         self.editor().execCommand('insertstring', self.suggestions.filtered()[self.selectedIndex()].value);
         self.editor().renderer.scrollCursorIntoView();
         self.detach();
@@ -395,7 +493,7 @@ from desktop.views import _ko
 
       HueAceAutocompleter.prototype.scrollSelectionIntoView = function () {
         var self = this;
-        var $autocompleterList = $('.autocompleter-list');
+        var $autocompleterList = $('.autocompleter-entries');
         var selected = $autocompleterList.children().eq(self.selectedIndex());
         var selectedTop = selected.position().top;
         if (selectedTop < 0) {

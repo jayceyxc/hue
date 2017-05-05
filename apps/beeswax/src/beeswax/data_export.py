@@ -28,7 +28,7 @@ LOG = logging.getLogger(__name__)
 
 
 FETCH_SIZE = 1000
-DOWNLOAD_COOKIE_AGE = 10
+DOWNLOAD_COOKIE_AGE = 1800 # 30 minutes
 
 
 def download(handle, format, db, id=None, file_name='query_result'):
@@ -93,6 +93,7 @@ class HS2DataAdapter:
     self.num_cols = None
     self.row_counter = 1
     self.is_truncated = False
+    self.has_more = True
 
   def __iter__(self):
     return self
@@ -101,6 +102,8 @@ class HS2DataAdapter:
     results = self.db.fetch(self.handle, start_over=self.start_over, rows=self.fetch_size)
 
     if self.first_fetched:
+      self.first_fetched = False
+      self.start_over = False
       self.headers = results.cols()
       self.num_cols = len(self.headers)
 
@@ -109,9 +112,8 @@ class HS2DataAdapter:
         LOG.warn('The query results contain %d columns and may take long time to download, reducing fetch size to 100.' % self.num_cols)
         self.fetch_size = 100
 
-    if not self.is_truncated and (self.first_fetched or results.has_more):
-      self.first_fetched = False
-      self.start_over = False
+    if self.has_more and not self.is_truncated:
+      self.has_more = results.has_more
       data = []
 
       for row in results.rows():

@@ -26,7 +26,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 %>
 
 <%def name="includes(is_embeddable=False)">
-<link rel="stylesheet" href="${ static('desktop/css/common_dashboard.css') }">
+<link rel="stylesheet" href="${ static('dashboard/css/common_dashboard.css') }">
 % if not is_embeddable:
 <link rel="stylesheet" href="${ static('notebook/css/notebook-layout.css') }">
 % endif
@@ -46,7 +46,6 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 % if not is_embeddable:
 <script src="${ static('desktop/ext/js/jquery/plugins/jquery-ui-1.10.4.custom.min.js') }"></script>
 <script src="${ static('desktop/ext/js/knockout-sortable.min.js') }"></script>
-<script src="${ static('desktop/js/apiHelper.js') }"></script>
 <script src="${ static('desktop/js/ko.charts.js') }"></script>
 <script src="${ static('desktop/js/ko.editable.js') }"></script>
 % endif
@@ -60,8 +59,8 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 % endif
 
 <script src="${ static('desktop/js/ko.selectize.js') }"></script>
-<script src="${ static('desktop/js/ko.switch-case.js') }"></script>
 <script src="${ static('desktop/js/sqlFunctions.js') }"></script>
+<script src="${ static('desktop/js/autocomplete/sqlParseSupport.js') }"></script>
 <script src="${ static('desktop/js/autocomplete/sql.js') }"></script>
 <script src="${ static('desktop/js/sqlAutocompleter.js') }"></script>
 <script src="${ static('desktop/js/sqlAutocompleter2.js') }"></script>
@@ -69,7 +68,6 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 <script src="${ static('desktop/js/hdfsAutocompleter.js') }"></script>
 <script src="${ static('desktop/js/autocompleter.js') }"></script>
 <script src="${ static('desktop/js/hue.json.js') }"></script>
-<script src="${ static('desktop/js/jquery.huedatatable.js') }"></script>
 <script src="${ static('desktop/js/jquery.hdfstree.js') }"></script>
 <script src="${ static('desktop/ext/js/markdown.min.js') }"></script>
 <script src="${ static('desktop/ext/js/jquery/plugins/jquery.hotkeys.js') }"></script>
@@ -80,7 +78,6 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 %if ENABLE_QUERY_BUILDER.get():
 <!-- For query builder -->
 <link rel="stylesheet" href="${ static('desktop/ext/css/jquery.contextMenu.min.css') }">
-<link rel="stylesheet" href="${ static('desktop/css/queryBuilder.css') }">
 <script src="${ static('desktop/ext/js/jquery/plugins/jquery.contextMenu.min.js') }"></script>
 <script src="${ static('desktop/ext/js/jquery/plugins/jquery.ui.position.min.js') }"></script>
 <script src="${ static('desktop/js/queryBuilder.js') }"></script>
@@ -111,7 +108,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
       $('#queryBuilder').hide();
       $('#queryBuilderAlert').show();
     }
-  }, 500);
+  }, 500, 'editor');
 
 </script>
 <!-- End query builder imports -->
@@ -126,7 +123,6 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 <script src="${ static('desktop/ext/js/leaflet/leaflet.markercluster.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/leaflet/leaflet.heat.js') }" type="text/javascript" charset="utf-8"></script>
 
-<script src="${ static('desktop/ext/js/d3.v3.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/js/nv.d3.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/topojson.v1.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/topo/world.topo.js') }" type="text/javascript" charset="utf-8"></script>
@@ -167,15 +163,6 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 <script src="${ static('desktop/js/ace/mode-hive.js') }"></script>
 <script src="${ static('desktop/js/ace/ext-language_tools.js') }"></script>
 <script src="${ static('desktop/js/ace.extended.js') }"></script>
-
-<script type="text/x-mathjax-config">
-  MathJax.Hub.Config({
-    showProcessingMessages: false,
-    tex2jax: { inlineMath: [['$','$'],['\\(','\\)']] },
-    TeX: { equationNumbers: {autoNumber: "AMS"} }
-  });
-</script>
-
 <script src="${ static('desktop/ext/js/download.min.js') }"></script>
 
 <%namespace name="dashboard" file="/common_dashboard.mako" />
@@ -195,12 +182,16 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
   .search-bar {
     top: 58px!important;
   }
-  .show-assist {
+
+  .show-assist,
+  .show-assist-right {
     top: 110px!important;
   }
+
   .main-content {
     top: 112px!important;
   }
+
   .context-panel {
     height: calc(100% - 104px);
     top: 104px;
@@ -209,10 +200,10 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 </style>
 
 <div class="print-logo">
-  <img class="pull-right" src="${ static('desktop/art/icon_hue_48.png') }" />
+  <img class="pull-right" src="${ static('desktop/art/icon_hue_48.png') }"  alt="${ _('Hue logo') }"/>
 </div>
 
-<div class="navbar navbar-inverse navbar-fixed-top" data-bind="visible: ! $root.isPlayerMode()">
+<div class="navbar hue-title-bar" data-bind="visible: ! $root.isPlayerMode()">
   <div class="navbar-inner">
     <div class="container-fluid">
       <div class="pull-right">
@@ -259,11 +250,6 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
               </a>
             </li>
             <li>
-              <a class="pointer" data-toggle="modal" data-target="#importGithubModal">
-                <i class="fa fa-fw fa-github"></i> ${ _('Import from Github') }
-              </a>
-            </li>
-            <li>
               <a class="pointer" data-bind="click: function() { $root.selectedNotebook().exportJupyterNotebook() }">
                 <i class="fa fa-fw fa-file-code-o"></i> ${ _('Export to Jupyter') }
               </a>
@@ -273,7 +259,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
         <!-- /ko -->
 
         <!-- ko if: editorMode -->
-        <a class="btn" href="javascript:void(0)" data-bind="click: function() { newNotebook(true); }, attr: { 'title': '${ _('New ') }' +  editorTypeTitle() + '${ _('Query') }' }" rel="tooltip" data-placement="bottom">
+        <a class="btn" href="javascript:void(0)" data-bind="click: function() { newNotebook($root.editorType(), null, selectedNotebook() ? $root.selectedNotebook().snippets()[0].currentQueryTab() : null); }, attr: { 'title': '${ _('New ') }' +  editorTypeTitle() + '${ _(' Query') }' }" rel="tooltip" data-placement="bottom">
           <i class="fa fa-file-o"></i>
         </a>
         <!-- /ko -->
@@ -283,9 +269,16 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
         </a>
         <!-- /ko -->
 
-        <a class="btn" data-bind="attr: { 'href': '${ url('notebook:notebooks') }?type=' + editorType(), 'title':  editorMode() ? '${ _('Queries') }' : '${ _('Notebooks') }'  }" rel="tooltip" data-placement="bottom">
+        <!-- ko if: IS_HUE_4 -->
+        <a class="btn" data-bind="hueLink: '/home?type=' + (editorMode() ? 'query-' : '') + editorType(), attr: { 'title': editorMode() ? '${ _('Queries') }' : '${ _('Notebooks') }'  }" rel="tooltip" data-placement="bottom">
           <i class="fa fa-tags"></i>
         </a>
+        <!-- /ko -->
+        <!-- ko ifnot: IS_HUE_4 -->
+        <a class="btn" data-bind="hueLink: '${ url('notebook:notebook') }?type=' + editorType(), attr: { 'title': editorMode() ? '${ _('Queries') }' : '${ _('Notebooks') }'  }" rel="tooltip" data-placement="bottom">
+          <i class="fa fa-tags"></i>
+        </a>
+        <!-- /ko -->
 
         <a class="btn pointer" title="${ _('Context') }" rel="tooltip" data-placement="bottom" data-bind="css: {'active': $root.isContextPanelVisible }, click: function() { $root.isContextPanelVisible(!$root.isContextPanelVisible()); }">
           <i class="fa fa-cogs"></i>
@@ -294,51 +287,41 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 
       <div class="nav-collapse">
         <ul class="nav editor-nav">
-          <li class="currentApp">
+          <li class="app-header">
             <!-- ko if: editorMode -->
-              <a data-bind="attr: { href: '${ url('notebook:editor') }?type=' + editorType(), title: editorTypeTitle() + '${ _(' Editor') }' }" style="cursor: pointer">
+              <a data-bind="hueLink: '${ url('notebook:editor') }?type=' + editorType(), attr: { 'title': editorTypeTitle() + '${ _(' Editor') }'}" style="cursor: pointer">
+              <!-- ko template: { name: 'app-icon-template', data: { icon: editorType() } } --><!-- /ko -->
               <!-- ko if: editorType() == 'impala' -->
-                <img src="${ static('impala/art/icon_impala_48.png') }" class="app-icon" />
                 Impala
               <!-- /ko -->
               <!-- ko if: editorType() == 'rdbms' -->
-                <img src="${ static('rdbms/art/icon_rdbms_48.png') }" class="app-icon" />
                 DB Query
               <!-- /ko -->
               <!-- ko if: editorType() == 'pig' -->
-                <img src="${ static('pig/art/icon_pig_48.png') }" class="app-icon" />
                 Pig
               <!-- /ko -->
               <!-- ko if: editorType() == 'java' -->
-                <i class="fa fa-file-code-o app-icon" style="vertical-align: middle"></i>
                 Java
               <!-- /ko -->
               <!-- ko if: editorType() == 'spark2' -->
-                <img src="${ static('spark/art/icon_spark_48.png') }" class="app-icon" />
                 Spark
               <!-- /ko -->
               <!-- ko if: editorType() == 'sqoop1' -->
-                <img src="${ static('oozie/art/icon_sqoop_48.png') }" class="app-icon" />
                 Sqoop 1
               <!-- /ko -->
               <!-- ko if: editorType() == 'distcp' -->
-                <i class="fa fa-files-o app-icon" style="vertical-align: middle"></i>
                 DistCp
               <!-- /ko -->
               <!-- ko if: editorType() == 'shell' -->
-                <i class="fa fa-terminal app-icon" style="vertical-align: middle"></i>
                 Shell
               <!-- /ko -->
               <!-- ko if: editorType() == 'mapreduce' -->
-                <i class="fa fa-file-archive-o app-icon" style="vertical-align: middle"></i>
                 MapReduce
               <!-- /ko -->
               <!-- ko if: editorType() == 'beeswax' || editorType() == 'hive' -->
-                <img src="${ static('beeswax/art/icon_beeswax_48.png') }" class="app-icon" />
                 Hive
               <!-- /ko -->
               <!-- ko if: ['impala', 'pig', 'hive', 'beeswax', 'rdbms', 'java', 'spark2', 'sqoop1', 'distcp', 'shell', 'mapreduce'].indexOf(editorType()) == -1 -->
-                <img src="${ static('rdbms/art/icon_rdbms_48.png') }" class="app-icon" />
                 SQL
               <!-- /ko -->
               </a>
@@ -357,7 +340,9 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
             <a title="${ _('This is a history query') }"><i class="fa fa-fw fa-history"></i></a>
           </li>
           <li data-bind="visible: directoryUuid" style="display: none" class="no-horiz-padding muted">
-            <a title="${ _('Open directory of this query') }" data-bind="attr: { 'href': '/home?uuid=' + directoryUuid() }" class="pointer inactive-action"><i class="fa fa-fw fa-folder-o"></i></a>
+            <a title="${ _('Open directory of this query') }" data-bind="hueLink: '/home?uuid=' + directoryUuid()"
+              class="pointer inactive-action" href="javascript:void(0)"><i class="fa fa-fw fa-folder-o"></i>
+            </a>
           </li>
           <li data-bind="visible: parentSavedQueryUuid" style="display: none" class="no-horiz-padding muted">
             <a title="${ _('Click to open original saved query') }" data-bind="click: function() { $root.openNotebook(parentSavedQueryUuid()) }" class="pointer inactive-action">
@@ -367,7 +352,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
           <li data-bind="visible: isSaved() && ! isHistory() && ! parentSavedQueryUuid()" style="display: none" class="no-horiz-padding muted">
             <a title="${ _('This is a saved query') }"><i class="fa fa-fw fa-file-o"></i></a>
           </li>
-          <li class="query-name no-horiz-padding" style="margin-left: 6px">
+          <li class="query-name no-horiz-padding">
             <a href="javascript:void(0)">
               <div class="notebook-name-desc" data-bind="editable: name, editableOptions: { inputclass: 'notebook-name-input', enabled: true, placement: 'bottom', emptytext: '${_ko('Add a name...')}', tpl: '<input type=\'text\' maxlength=\'255\'>' }"></div>
             </a>
@@ -386,7 +371,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 
  <div class="player-toolbar" data-bind="visible: $root.isPlayerMode() && $root.isFullscreenMode()" style="display: none;">
     <div class="pull-right pointer" data-bind="click: function(){ hueUtils.exitFullScreen(); $root.isPlayerMode(false); $root.isFullscreenMode(false);  }"><i class="fa fa-times"></i></div>
-    <img src="${ static('desktop/art/icon_hue_48.png') }" />
+    <img src="${ static('desktop/art/icon_hue_48.png') }"  alt="${ _('Hue logo') }"/>
     <!-- ko if: $root.selectedNotebook() -->
     <h4 data-bind="text: $root.selectedNotebook().name"></h4>
     <!-- /ko -->
@@ -394,530 +379,27 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 </%def>
 
 
-<%def name="commonHTML(with_assist='true')">
+<%def name="commonHTML(is_embeddable=False)">
 
 <div id="detailsModal" class="modal transparent-modal hide" data-backdrop="true" style="width:980px;margin-left:-510px!important">
   <div class="modal-header">
-    <a data-dismiss="modal" class="pointer pull-right"><i class="fa fa-times"></i></a>
-    <h3>${_('Row details')}</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${_('Row details')}</h2>
   </div>
   <div class="modal-body">
-    <table class="table table-striped table-condensed">
+    <table class="table table-condensed">
 
     </table>
   </div>
 </div>
 
-
 <div id="helpModal" class="modal transparent-modal hide" data-backdrop="true" style="width:980px;margin-left:-510px!important">
   <div class="modal-header">
-    <a data-dismiss="modal" class="pointer pull-right"><i class="fa fa-times"></i></a>
-    <h3>${_('Editor keyboard shortcuts')}</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${_('Editor keyboard shortcuts')}</h2>
   </div>
   <div class="modal-body">
-
-      <ul class="nav nav-tabs">
-        <li class="active"><a href="#helpLineOperations" data-toggle="tab">${ _('Line Operations')}</a></li>
-        <li><a href="#helpSelection" data-toggle="tab">${ _('Selection')}</a></li>
-        <li><a href="#helpMulticursor" data-toggle="tab">${ _('Multicursor')}</a></li>
-        <li><a href="#helpGoTo" data-toggle="tab">${ _('Go to')}</a></li>
-        <li><a href="#helpFindReplace" data-toggle="tab">${ _('Find/Replace')}</a></li>
-        <li><a href="#helpFolding" data-toggle="tab">${ _('Folding')}</a></li>
-        <li><a href="#helpOther" data-toggle="tab">${ _('Other')}</a></li>
-        <li><a href="#helpSettings" data-toggle="tab">${ _('Settings')}</a></li>
-      </ul>
-
-      <div class="tab-content">
-        <div class="tab-pane active" id="helpLineOperations">
-          <table class="table">
-        <thead>
-        <tr>
-          <th>Windows/Linux</th>
-          <th>Mac</th>
-          <th>${ _('Action')}</th>
-        </tr>
-        </thead>
-        <tbody>
-        <tr>
-          <td>Ctrl-D</td>
-          <td>Command-D</td>
-          <td>${ _('Remove line')}</td>
-        </tr>
-        <tr>
-          <td>Alt-Shift-Down</td>
-          <td>Command-Option-Down</td>
-          <td>${ _('Copy lines down')}</td>
-        </tr>
-        <tr>
-          <td>Alt-Shift-Up</td>
-          <td>Command-Option-Up</td>
-          <td>${ _('Copy lines up')}</td>
-        </tr>
-        <tr>
-          <td>Alt-Down</td>
-          <td>Option-Down</td>
-          <td>${ _('Move lines down')}</td>
-        </tr>
-        <tr>
-          <td>Alt-Up</td>
-          <td>Option-Up</td>
-          <td>${ _('Move lines up')}</td>
-        </tr>
-        <tr>
-          <td>Alt-Delete</td>
-          <td>Ctrl-K</td>
-          <td>${ _('Remove to line end')}</td>
-        </tr>
-        <tr>
-          <td>Alt-Backspace</td>
-          <td>Command-Backspace</td>
-          <td>${ _('Remove to line start')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Backspace</td>
-          <td>Option-Backspace, Ctrl-Option-Backspace</td>
-          <td>${ _('Remove word left')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Delete</td>
-          <td>Option-Delete</td>
-          <td>${ _('Remove word right')}</td>
-        </tr>
-        <tr>
-          <td>---</td>
-          <td>Ctrl-O</td>
-          <td>${ _('Split line')}</td>
-        </tr>
-        </tbody>
-      </table>
-        </div>
-        <div class="tab-pane" id="helpSelection">
-          <table class="table">
-        <thead>
-        <tr>
-          <th>Windows/Linux</th>
-          <th>Mac</th>
-          <th>${ _('Action')}</th>
-        </tr>
-        </thead>
-        <tbody>
-        <tr>
-          <td>Ctrl-A</td>
-          <td>Command-A</td>
-          <td>${ _('Select all')}</td>
-        </tr>
-        <tr>
-          <td>Shift-Left</td>
-          <td>Shift-Left</td>
-          <td>${ _('Select left')}</td>
-        </tr>
-        <tr>
-          <td>Shift-Right</td>
-          <td>Shift-Right</td>
-          <td>${ _('Select right')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Shift-Left</td>
-          <td>Option-Shift-Left</td>
-          <td>${ _('Select word left')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Shift-Right</td>
-          <td>Option-Shift-Right</td>
-          <td>${ _('Select word right')}</td>
-        </tr>
-        <tr>
-          <td>Shift-Home</td>
-          <td>Shift-Home</td>
-          <td>${ _('Select line start')}</td>
-        </tr>
-        <tr>
-          <td>Shift-End</td>
-          <td>Shift-End</td>
-          <td>${ _('Select line end')}</td>
-        </tr>
-        <tr>
-          <td>Alt-Shift-Right</td>
-          <td>Command-Shift-Right</td>
-          <td>${ _('Select to line end')}</td>
-        </tr>
-        <tr>
-          <td>Alt-Shift-Left</td>
-          <td>Command-Shift-Left</td>
-          <td>${ _('Select to line start')}</td>
-        </tr>
-        <tr>
-          <td>Shift-Up</td>
-          <td>Shift-Up</td>
-          <td>${ _('Select up')}</td>
-        </tr>
-        <tr>
-          <td>Shift-Down</td>
-          <td>Shift-Down</td>
-          <td>${ _('Select down')}</td>
-        </tr>
-        <tr>
-          <td>Shift-PageUp</td>
-          <td>Shift-PageUp</td>
-          <td>${ _('Select page up')}</td>
-        </tr>
-        <tr>
-          <td>Shift-PageDown</td>
-          <td>Shift-PageDown</td>
-          <td>${ _('Select page down')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Shift-Home</td>
-          <td>Command-Shift-Up</td>
-          <td>${ _('Select to start')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Shift-End</td>
-          <td>Command-Shift-Down</td>
-          <td>${ _('Select to end')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Shift-D</td>
-          <td>Command-Shift-D</td>
-          <td>${ _('Duplicate selection')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Shift-P</td>
-          <td>---</td>
-          <td>${ _('Select to matching bracket')}</td>
-        </tr>
-        </tbody>
-      </table>
-        </div>
-        <div class="tab-pane" id="helpMulticursor">
-          <table class="table">
-        <thead>
-        <tr>
-          <th>Windows/Linux</th>
-          <th>Mac</th>
-          <th>${ _('Action')}</th>
-        </tr>
-        </thead>
-        <tbody>
-        <tr>
-          <td>Ctrl-Alt-Up</td>
-          <td>Ctrl-Option-Up</td>
-          <td>${ _('Add multi-cursor above')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Alt-Down</td>
-          <td>Ctrl-Option-Down</td>
-          <td>${ _('Add multi-cursor below')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Alt-Right</td>
-          <td>Ctrl-Option-Right</td>
-          <td>${ _('Add next occurrence to multi-selection')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Alt-Left</td>
-          <td>Ctrl-Option-Left</td>
-          <td>${ _('Add previous occurrence to multi-selection')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Alt-Shift-Up</td>
-          <td>Ctrl-Option-Shift-Up</td>
-          <td>${ _('Move multicursor from current line to the line above')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Alt-Shift-Down</td>
-          <td>Ctrl-Option-Shift-Down</td>
-          <td>${ _('Move multicursor from current line to the line below')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Alt-Shift-Right</td>
-          <td>Ctrl-Option-Shift-Right</td>
-          <td>${ _('Remove current occurrence from multi-selection and move to next')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Alt-Shift-Left</td>
-          <td>Ctrl-Option-Shift-Left</td>
-          <td>${ _('Remove current occurrence from multi-selection and move to previous')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Shift-L</td>
-          <td>Ctrl-Shift-L</td>
-          <td>${ _('Select all from multi-selection')}</td>
-        </tr>
-        </tbody>
-      </table>
-        </div>
-        <div class="tab-pane" id="helpGoTo">
-          <table class="table">
-      <thead>
-      <tr>
-        <th>Windows/Linux</th>
-        <th>Mac</th>
-        <th>${ _('Action')}</th>
-      </tr>
-      </thead>
-      <tbody>
-      <tr>
-        <td>Left</td>
-        <td>Left, Ctrl-B</td>
-        <td>${ _('Go to left')}</td>
-      </tr>
-      <tr>
-        <td>Right</td>
-        <td>Right, Ctrl-F</td>
-        <td>${ _('Go to right')}</td>
-      </tr>
-      <tr>
-        <td>Ctrl-Left</td>
-        <td>Option-Left</td>
-        <td>${ _('Go to word left')}</td>
-      </tr>
-      <tr>
-        <td>Ctrl-Right</td>
-        <td>Option-Right</td>
-        <td>${ _('Go to word right')}</td>
-      </tr>
-      <tr>
-        <td>Up</td>
-        <td>Up, Ctrl-P</td>
-        <td>${ _('Go line up')}</td>
-      </tr>
-      <tr>
-        <td>Down</td>
-        <td>Down, Ctrl-N</td>
-        <td>${ _('Go line down')}</td>
-      </tr>
-      <tr>
-        <td>Alt-Left, Home</td>
-        <td>Command-Left, Home, Ctrl-A</td>
-        <td>${ _('Go to line start')}</td>
-      </tr>
-      <tr>
-        <td>Alt-Right, End</td>
-        <td>Command-Right, End, Ctrl-E</td>
-        <td>${ _('Go to line end')}</td>
-      </tr>
-      <tr>
-        <td>PageUp</td>
-        <td>Option-PageUp</td>
-        <td>${ _('Go to page up')}</td>
-      </tr>
-      <tr>
-        <td>PageDown</td>
-        <td>Option-PageDown, Ctrl-V</td>
-        <td>${ _('Go to page down')}</td>
-      </tr>
-      <tr>
-        <td>Ctrl-Home</td>
-        <td>Command-Home, Command-Up</td>
-        <td>${ _('Go to start')}</td>
-      </tr>
-      <tr>
-        <td>Ctrl-End</td>
-        <td>Command-End, Command-Down</td>
-        <td>${ _('Go to end')}</td>
-      </tr>
-      <tr>
-        <td>Ctrl-L, Ctrl-J</td>
-        <td>Command-L, Command-J</td>
-        <td>${ _('Go to line')}</td>
-      </tr>
-      <tr>
-        <td>Ctrl-Down</td>
-        <td>Command-Down</td>
-        <td>${ _('Scroll line down')}</td>
-      </tr>
-      <tr>
-        <td>Ctrl-Up</td>
-        <td>---</td>
-        <td>${ _('Scroll line up')}</td>
-      </tr>
-      <tr>
-        <td>Ctrl-P</td>
-        <td>---</td>
-        <td>${ _('Go to matching bracket')}</td>
-      </tr>
-      <tr>
-        <td>---</td>
-        <td>Option-PageDown</td>
-        <td>${ _('Scroll page down')}</td>
-      </tr>
-      <tr>
-        <td>---</td>
-        <td>Option-PageUp</td>
-        <td>${ _('Scroll page up')}</td>
-      </tr>
-      </tbody>
-    </table>
-        </div>
-        <div class="tab-pane" id="helpFindReplace">
-          <table class="table">
-        <thead>
-        <tr>
-          <th>Windows/Linux</th>
-          <th>Mac</th>
-          <th>${ _('Action')}</th>
-        </tr>
-        </thead>
-        <tbody>
-        <tr>
-          <td>Ctrl-F</td>
-          <td>Command-F</td>
-          <td>${ _('Find')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-H</td>
-          <td>Command-Option-F</td>
-          <td>${ _('Replace')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-K</td>
-          <td>Command-G</td>
-          <td>${ _('Find next')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Shift-K</td>
-          <td>Command-Shift-G</td>
-          <td>${ _('Find previous')}</td>
-        </tr>
-        </tbody>
-      </table>
-        </div>
-        <div class="tab-pane" id="helpFolding">
-          <table class="table">
-        <thead>
-        <tr>
-          <th>Windows/Linux</th>
-          <th>Mac</th>
-          <th>${ _('Action')}</th>
-        </tr>
-        </thead>
-        <tbody>
-        <tr>
-          <td>Alt-L, Ctrl-F1</td>
-          <td>Command-Option-L, Command-F1</td>
-          <td>${ _('Fold selection')}</td>
-        </tr>
-        <tr>
-          <td>Alt-Shift-L, Ctrl-Shift-F1</td>
-          <td>Command-Option-Shift-L, Command-Shift-F1</td>
-          <td>${ _('Unfold')}</td>
-        </tr>
-        <tr>
-          <td>Alt-0</td>
-          <td>Command-Option-0</td>
-          <td>${ _('Fold all')}</td>
-        </tr>
-        <tr>
-          <td>Alt-Shift-0</td>
-          <td>Command-Option-Shift-0</td>
-          <td>${ _('Unfold all')}</td>
-        </tr>
-        </tbody>
-      </table>
-     </div>
-     <div class="tab-pane" id="helpOther">
-      <table class="table">
-        <thead>
-        <tr>
-          <th>Windows/Linux</th>
-          <th>Mac</th>
-          <th>${ _('Action')}</th>
-        </tr>
-        </thead>
-        <tbody>
-        <tr>
-          <td>Ctrl-Space</td>
-          <td>Ctrl-Space</td>
-          <td>${ _('Autocomplete when Live Autocompletion is off')}</td>
-        </tr>
-        <tr>
-          <td>Tab</td>
-          <td>Tab</td>
-          <td>${ _('Indent')}</td>
-        </tr>
-        <tr>
-          <td>Shift-Tab</td>
-          <td>Shift-Tab</td>
-          <td>${ _('Outdent')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Z</td>
-          <td>Command-Z</td>
-          <td>${ _('Undo')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Shift-Z, Ctrl-Y</td>
-          <td>Command-Shift-Z, Command-Y</td>
-          <td>${ _('Redo')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-/</td>
-          <td>Command-/</td>
-          <td>${ _('Toggle comment')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-T</td>
-          <td>Ctrl-T</td>
-          <td>${ _('Transpose letters')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Shift-U</td>
-          <td>Ctrl-Shift-U</td>
-          <td>${ _('Change to lower case')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-U</td>
-          <td>Ctrl-U</td>
-          <td>${ _('Change to upper case')}</td>
-        </tr>
-        <tr>
-          <td>Insert</td>
-          <td>Insert</td>
-          <td>${ _('Overwrite')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Shift-E</td>
-          <td>Command-Shift-E</td>
-          <td>${ _('Macros replay')}</td>
-        </tr>
-        <tr>
-          <td>Ctrl-Alt-E</td>
-          <td>---</td>
-          <td>${ _('Macros recording')}</td>
-        </tr>
-        <tr>
-          <td>Delete</td>
-          <td>---</td>
-          <td>${ _('Delete')}</td>
-        </tr>
-        <tr>
-          <td>---</td>
-          <td>Ctrl-L</td>
-          <td>${ _('Center selection')}</td>
-        </tr>
-        </tbody>
-      </table>
-     </div>
-     <div class="tab-pane" id="helpSettings">
-      <table class="table">
-        <thead>
-        <tr>
-          <th>Windows/Linux</th>
-          <th>Mac</th>
-          <th>${ _('Action')}</th>
-        </tr>
-        </thead>
-        <tbody>
-        <tr>
-          <td>Ctrl - ,</td>
-          <td>Command - ,</td>
-          <td>${ _('Show the settings menu')}</td>
-        </tr>
-        </tbody>
-      </table>
-    </div>
-      </div>
+    <!-- ko component: 'aceKeyboardShortcuts' --><!-- /ko -->
   </div>
   <div class="modal-footer">
     <a href="#" class="btn" data-dismiss="modal">${_('Close')}</a>
@@ -926,8 +408,8 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 
 <div id="combinedContentModal" class="modal hide" data-backdrop="true" style="width:780px;margin-left:-410px!important">
   <div class="modal-header">
-    <a href="javascript: void(0)" data-dismiss="modal" class="pull-right"><i class="fa fa-times"></i></a>
-    <h3>${_('All Notebook content')}</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${_('All Notebook content')}</h2>
   </div>
   <div class="modal-body">
     <pre data-bind="oneClickSelect, text: combinedContent"></pre>
@@ -937,28 +419,11 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
   </div>
 </div>
 
-<div id="importGithubModal" class="modal hide" data-backdrop="true" style="width:780px;margin-left:-410px!important">
-  <div class="modal-header">
-    <a href="javascript: void(0)" data-dismiss="modal" class="pull-right"><i class="fa fa-times"></i></a>
-    <h3>${_('Import from Github')}</h3>
-  </div>
-  <div class="modal-body">
-    <div class="input-prepend">
-      <span class="add-on"><i class="fa fa-github"></i></span>
-      <input id="importGithubUrl" type="text" placeholder="ie: https://github.com/romainr/hadoop-tutorials-examples/blob/master/notebook/shared_rdd/hue-sharedrdd-notebook.json" style="width: 726px" />
-    </div>
-  </div>
-  <div class="modal-footer">
-    <a href="#" class="btn" data-dismiss="modal">${_('Close')}</a>
-    <a id ="importGithubBtn" href="#" class="btn btn-primary disable-feedback" data-bind="click: authorizeGithub">${_('Import')}</a>
-  </div>
-</div>
-
 % if ENABLE_QUERY_BUILDER.get():
 <div id="invalidQueryBuilder" class="modal hide">
   <div class="modal-header">
-    <a href="#" class="close" data-dismiss="modal">&times;</a>
-    <h3>${_('Invalid Query')}</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${_('Invalid Query')}</h2>
   </div>
   <div class="modal-body">
     <p>${_('Query requires a select or an aggregate.')}</p>
@@ -969,9 +434,12 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 </div>
 % endif
 
-% if with_assist == 'true':
+% if not is_embeddable:
 <a title="${_('Toggle Assist')}" class="pointer show-assist" data-bind="visible: !$root.isLeftPanelVisible() && $root.assistAvailable(), click: function() { $root.isLeftPanelVisible(true); huePubSub.publish('assist.set.manual.visibility'); }">
   <i class="fa fa-chevron-right"></i>
+</a>
+<a title="${_('Toggle Assist')}" class="pointer show-assist-right" data-bind="visible: !$root.isRightPanelVisible() && $root.isRightPanelAvailable(), click: function() { $root.isRightPanelVisible(true); huePubSub.publish('assist.set.manual.visibility'); }">
+  <i class="fa fa-chevron-left"></i>
 </a>
 % endif
 
@@ -986,7 +454,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 </div>
 
 <script type="text/html" id="notebook">
-  % if with_assist == 'true':
+  % if not is_embeddable:
   <div class="assist-container left-panel" data-bind="visible: isLeftPanelVisible() && assistAvailable()">
     <a title="${_('Toggle Assist')}" class="pointer hide-assist" data-bind="click: function() { isLeftPanelVisible(false); huePubSub.publish('assist.set.manual.visibility'); }">
       <i class="fa fa-chevron-left"></i>
@@ -999,7 +467,6 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
             sourceTypes: sqlSourceTypes,
             activeSourceType: activeSqlSourceType,
             navigationSettings: {
-              enableActiveFilter: editorMode(),
               openDatabase: false,
               openItem: false,
               showStats: true,
@@ -1010,8 +477,9 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
         }
       }"></div>
   </div>
-  <div class="resizer" data-bind="visible: isLeftPanelVisible() && assistAvailable(), splitDraggable : { appName: 'notebook', leftPanelVisible: isLeftPanelVisible, onPosition: function(){ huePubSub.publish('split.draggable.position') } }"><div class="resize-bar">&nbsp;</div></div>
+  <div class="resizer" data-bind="visible: isLeftPanelVisible() && assistAvailable(), splitDraggable : { appName: 'notebook', leftPanelVisible: isLeftPanelVisible, rightPanelVisible: isRightPanelVisible, onPosition: function(){ huePubSub.publish('split.draggable.position') } }"><div class="resize-bar">&nbsp;</div></div>
   % endif
+
   <div class="content-panel" data-bind="event: { scroll: function(){ var ls = $(MAIN_SCROLLABLE).data('lastScroll'); if (ls && ls != $(MAIN_SCROLLABLE).scrollTop()){ $(document).trigger('hideAutocomplete'); }; $(MAIN_SCROLLABLE).data('lastScroll', $(MAIN_SCROLLABLE).scrollTop()) } }, with: selectedNotebook">
     <div>
       <div class="row-fluid row-container sortable-snippets" data-bind="css: {'is-editing': $root.isEditing},
@@ -1065,135 +533,88 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
     </div>
   </div>
 
+  % if not is_embeddable:
+    <!-- ko if: isRightPanelAvailable -->
+    <div class="resizer" data-bind="visible: isRightPanelVisible, splitDraggable : { isRightPanel: true, appName: 'notebook', leftPanelVisible: isLeftPanelVisible, rightPanelVisible: isRightPanelVisible, onPosition: function(){ huePubSub.publish('split.draggable.position') } }"><div class="resize-bar">&nbsp;</div></div>
+    <div class="assist-container right-panel" data-bind="visible: isRightPanelVisible">
+      <a title="${_('Toggle Assist')}" class="pointer hide-assist-right" data-bind="click: function() { isRightPanelVisible(false); huePubSub.publish('assist.set.manual.visibility'); }">
+        <i class="fa fa-chevron-right"></i>
+      </a>
+      <div class="assist" data-bind="component: {
+      name: 'right-assist-panel',
+      params: {}
+    }">
+      </div>
+    </div>
+    <!-- /ko -->
+  % endif
 
-  <div class="context-panel" data-bind="css: {'visible': isContextPanelVisible}">
+
+  <div class="context-panel" data-bind="css: {'visible': isContextPanelVisible}" style="${ 'height: 100%' if not is_embeddable else '' }">
     <ul class="nav nav-tabs">
-      % if has_optimizer():
-      <li class="active"><a href="#assistantTab" data-toggle="tab">${_('Assistant')}</a></li>
-      % endif
-      <li class="${ 'active' if not has_optimizer() else '' }"><a href="#sessionsTab" data-toggle="tab">${_('Sessions')}</a></li>
-      % if ENABLE_QUERY_SCHEDULING.get():
-      <!-- ko if: $root.selectedNotebook() && $root.selectedNotebook().isBatchable() -->
-        <li><a href="#scheduleTab" data-toggle="tab">${_('Schedule')}</a></li>
-      <!-- /ko -->
-      % endif
+      <li class="active"><a href="#sessionsTab" data-toggle="tab">${_('Sessions')}</a></li>
     </ul>
 
     <div class="tab-content" style="border: none">
-      % if has_optimizer():
-      <div class="tab-pane active" id="assistantTab">
+      <div class="tab-pane active" id="sessionsTab">
         <div class="row-fluid">
-          <div class="span12">
-            <form class="form-horizontal">
-              <fieldset>
-               ${ _('Active tables') }<br/> <i class="fa fa-object-group"></i>
-               <ul>
-                 <li>sample_07 <i class="fa fa-info"></i> <i class="fa fa-warning"></i> <i class="fa fa-refresh"></i></li>
-                 <li>sample_08 <i class="fa fa-info"></i> </li>
-               </ul>
-               Outline?<br/>
-             </fieldset>
-            <form class="form-horizontal">
-              <fieldset>
-               ${ _('Suggestions') }<br/>
-
-               Risk<br/>
-               <br/>
-
-               Did you know?<br/>
-               Ran 100 times last week<br/>
-               Could be automated with integrated scheduler<br/>
-               Share results?<br/>
-               Parameterize the query?<br/>
-             </fieldset>
-           </form>
-         </div>
-       </div>
+          <div class="span12" data-bind="template: { name: 'notebook-session-config-template', data: $root }"></div>
+        </div>
       </div>
-      % endif
+    </div>
+  </div>
+</script>
 
-      <div class="tab-pane ${ 'active' if not has_optimizer() else '' }" id="sessionsTab">
-        <div class="row-fluid">
-          <div class="span12">
-            <!-- ko with: $root.selectedNotebook() -->
-            <form class="form-horizontal session-config">
-              <fieldset>
-                <!-- ko ifnot: sessions().length -->
-               <p>${ _('There are currently no active sessions, please reload the page.') }</p>
-               <!-- /ko -->
-               <!-- ko foreach: sessions -->
-               <h4 data-bind="text: $root.getSnippetName(type())" style="clear:left; display: inline-block"></h4>
-               <div class="session-actions">
-                 <a class="inactive-action pointer" title="${ _('Recreate session') }" rel="tooltip" data-bind="click: function() { $root.selectedNotebook().restartSession($data) }"><i class="fa fa-refresh" data-bind="css: { 'fa-spin': restarting }"></i> ${ _('Recreate') }</a>
-                 <a class="inactive-action pointer margin-left-10" title="${ _('Close session') }" rel="tooltip" data-bind="click: function() { $root.selectedNotebook().closeAndRemoveSession($data) }"><i class="fa fa-times"></i> ${ _('Close') }</a>
-                 % if conf.USE_DEFAULT_CONFIGURATION.get():
-                 <a class="inactive-action pointer margin-left-10" title="${ _('Save session settings as default') }" rel="tooltip" data-bind="click: function() { $root.selectedNotebook().saveDefaultUserProperties($data) }"><i class="fa fa-save"></i> ${ _('Set as default settings') }</a>
-                 % endif
-                 <!-- ko if: type()== 'impala' && typeof http_addr != 'undefined' -->
-                 <a class="margin-left-10" data-bind="attr: {'href': window.location.protocol + '//' + http_addr().replace(/^(https?):\/\//, '')}" target="_blank"><i class="fa fa-external-link"></i> <span data-bind="text: http_addr().replace(/^(https?):\/\//, '')"></span></a>
-                 <!-- /ko -->
-               </div>
-               <div style="width:100%;">
-                 <!-- ko component: { name: 'property-selector', params: { properties: properties } } --><!-- /ko -->
-               </div>
-               <div style="clear:both; padding-left: 120px;">
-                 <!-- ko if: availableNewProperties().length -->
-                 <select data-bind="options: availableNewProperties,
+<script type="text/html" id="notebook-session-config-template">
+  <!-- ko with: selectedNotebook() -->
+  <form class="form-horizontal session-config">
+    <fieldset>
+      <!-- ko ifnot: sessions().length -->
+      <p>${ _('There are currently no active sessions, please reload the page.') }</p>
+      <!-- /ko -->
+      <!-- ko foreach: sessions -->
+      <h4 data-bind="text: $parents[1].getSnippetName(type())" style="clear:left; display: inline-block"></h4>
+      <div class="session-actions">
+        <a class="inactive-action pointer" title="${ _('Recreate session') }" rel="tooltip" data-bind="click: function() { $parent.restartSession($data) }">
+          <i class="fa fa-refresh" data-bind="css: { 'fa-spin': restarting }"></i> ${ _('Recreate') }
+        </a>
+        <a class="inactive-action pointer margin-left-10" title="${ _('Close session') }" rel="tooltip" data-bind="click: function() { $parent.closeAndRemoveSession($data) }"><i class="fa fa-times"></i> ${ _('Close') }</a>
+        % if conf.USE_DEFAULT_CONFIGURATION.get():
+          <a class="inactive-action pointer margin-left-10" title="${ _('Save session settings as default') }" rel="tooltip" data-bind="click: function() { $parent.saveDefaultUserProperties($data) }"><i class="fa fa-save"></i> ${ _('Set as default settings') }</a>
+        % endif
+        <!-- ko if: type() == 'impala' && typeof http_addr != 'undefined' -->
+        <a class="margin-left-10" data-bind="attr: {'href': http_addr()}" target="_blank"><i class="fa fa-external-link"></i> <span data-bind="text: http_addr().replace(/^(https?):\/\//, '')"></span></a>
+        <!-- /ko -->
+      </div>
+      <div style="width:100%;">
+        <!-- ko component: { name: 'property-selector', params: { properties: properties } } --><!-- /ko -->
+      </div>
+      <div style="clear:both; padding-left: 120px;">
+        <!-- ko if: availableNewProperties().length -->
+        <select data-bind="options: availableNewProperties,
                           optionsText: 'nice_name',
                           optionsValue: 'name',
                           value: selectedSessionProperty,
                           optionsCaption: '${ _ko('Choose a property...') }'"></select>
-                 <a class="pointer" style="padding:5px;" data-bind="click: selectedSessionProperty() && function() {
+        <a class="pointer" style="padding:5px;" data-bind="click: selectedSessionProperty() && function() {
                     properties.push(ko.mapping.fromJS({'name': selectedSessionProperty(), 'value': ''}));
                     selectedSessionProperty('');
                    }" style="margin-left:10px;vertical-align: text-top;">
-                   <i class="fa fa-plus"></i>
-                 </a>
-                 <!-- /ko -->
-               </div>
-               <!-- /ko -->
-               <!-- /ko -->
-               <br/>
-             </fieldset>
-           </form>
-           <!-- /ko -->
-         </div>
-       </div>
-    </div>
-
-    % if ENABLE_QUERY_SCHEDULING.get():
-    <!-- ko if: $root.selectedNotebook() && $root.selectedNotebook().isBatchable() -->
-    <!-- ko with: $root.selectedNotebook() -->
-    <div class="tab-pane" id="scheduleTab">
-      <!-- ko if: isSaved() -->
-        <!-- ko if: schedulerViewModelIsLoaded() && schedulerViewModel.coordinator.isDirty() -->
-          <a data-bind="click: $root.saveNotebook">${ _('Changes not saved') }</a>
+          <i class="fa fa-plus"></i>
+        </a>
         <!-- /ko -->
-        <!-- ko if: schedulerViewModelIsLoaded() && ! schedulerViewModel.coordinator.isDirty() -->
-          <a data-bind="click: showSubmitPopup">${ _('Start') }</a>
-        <!-- /ko -->
-        <br>
-        <br>
-        <div id="schedulerEditor">
-        </div>
+      </div>
       <!-- /ko -->
-
-      <!-- ko ifnot: isSaved() -->
-        ${ _('Query needs to be saved first.') }
       <!-- /ko -->
-    </div>
-    <!-- /ko -->
-    <!-- /ko -->
-
-    <!-- /ko -->
-    % endif
-
-  </div>
+      <br/>
+    </fieldset>
+  </form>
+  <!-- /ko -->
 </script>
 
 <script type="text/html" id="snippetIcon">
   <!-- ko if: viewSettings().snippetImage -->
-  <img class="snippet-icon-image" data-bind="attr: { 'src': viewSettings().snippetImage }">
+  <img class="snippet-icon-image" data-bind="attr: { 'src': viewSettings().snippetImage }" alt="${ _('Snippet icon') }">
   <!-- /ko -->
   <!-- ko if: viewSettings().snippetIcon -->
   <i class="fa snippet-icon" data-bind="css: viewSettings().snippetIcon"></i>
@@ -1204,9 +625,9 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
   <div class="snippet-log-container margin-bottom-10" data-bind="visible: showLogs() && status() != 'ready' && status() != 'loading'" style="display: none;">
     <div data-bind="delayedOverflow, css: resultsKlass" style="margin-top: 5px; position: relative;">
       <ul data-bind="visible: jobs().length > 0, foreach: jobs" class="unstyled jobs-overlay">
-        <li data-bind="attr: {'id': $data.name.substr(4)}"><a data-bind="text: $.trim($data.name), attr: { href: $data.url }" target="_blank"></a>
+        <li data-bind="attr: {'id': $data.name.substr(4)}"><a data-bind="text: $.trim($data.name), hueLink: $data.url" target="_blank"></a>
           <!-- ko if: typeof percentJob !== 'undefined' && percentJob() > -1 -->
-          <div class="progress-job progress active pull-left" style="background-color: #FFF; width: 100%" data-bind="css: {'progress-warning': percentJob() < 100, 'progress-success': percentJob() === 100}">
+          <div class="progress-job progress pull-left" style="background-color: #FFF; width: 100%" data-bind="css: {'progress-warning': percentJob() < 100, 'progress-success': percentJob() === 100}">
             <div class="bar" data-bind="style: {'width': percentJob() + '%'}"></div>
           </div>
           <!-- /ko -->
@@ -1233,9 +654,11 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
       <pre class="margin-top-10 no-margin-bottom"><i class="fa fa-check muted"></i> ${ _("Results have expired, rerun the query if needed.") }</pre>
     </div>
 
-    <div data-bind="visible: status() == 'available' && ! result.fetchedOnce(), css: resultsKlass" style="display:none;">
+    <!-- ko if: status() == 'available' && ! result.fetchedOnce() -->
+    <div data-bind="css: resultsKlass">
       <pre class="margin-top-10 no-margin-bottom"><i class="fa fa-spin fa-spinner"></i> ${ _('Loading...') }</pre>
     </div>
+    <!-- /ko -->
   </div>
 </script>
 
@@ -1246,14 +669,14 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
         <li data-bind="click: function(){ currentQueryTab('queryHistory'); }, css: {'active': currentQueryTab() == 'queryHistory'}, clickOutside: function () { if ($parent.historyFilterVisible() && $parent.historyFilter() === '') { $parent.historyFilterVisible(false) } }">
           <a class="inactive-action" href="#queryHistory" data-toggle="tab">${_('Query History')}
             <div class="inline-block inactive-action margin-left-10 pointer" title="${_('Search the query history')}" data-bind="click: function(data, e){ $parent.historyFilterVisible(!$parent.historyFilterVisible()); if ($parent.historyFilterVisible()) { window.setTimeout(function(){ $(e.target).parent().siblings('input').focus(); }, 0); } else { $parent.historyFilter('') }}"><i class="snippet-icon fa fa-search"></i></div>
-            <input class="input-small history-filter" type="text" data-bind="visible: $parent.historyFilterVisible, clearable: $parent.historyFilter, valueUpdate:'afterkeydown'" placeholder="${ _('Search...') }">
+            <input class="input-small inline-tab-filter" type="text" data-bind="visible: $parent.historyFilterVisible, clearable: $parent.historyFilter, valueUpdate:'afterkeydown'" placeholder="${ _('Search...') }">
             <div class="inline-block inactive-action pointer" title="${_('Clear the query history')}" data-target="#clearHistoryModal" data-toggle="modal" rel="tooltip" data-bind="visible: $parent.history().length > 0"><i class="snippet-icon fa fa-calendar-times-o"></i></div>
           </a>
         </li>
         <li data-bind="click: function(){ currentQueryTab('savedQueries'); }, css: {'active': currentQueryTab() == 'savedQueries'}, clickOutside: function () { if (queriesFilterVisible() && queriesFilter() === '') { queriesFilterVisible(false) } }">
           <a class="inactive-action" href="#savedQueries" data-toggle="tab">${_('Saved Queries')}
             <div class="inline-block inactive-action margin-left-10 pointer" title="${_('Search the saved queries')}" data-bind="visible: !queriesHasErrors(), click: function(data, e){ queriesFilterVisible(!queriesFilterVisible()); if (queriesFilterVisible()) { window.setTimeout(function(){ $(e.target).parent().siblings('input').focus(); }, 0); } else { queriesFilter('') }}"><i class="snippet-icon fa fa-search"></i></div>
-            <input class="input-small history-filter" type="text" data-bind="visible: queriesFilterVisible, clearable: queriesFilter, valueUpdate:'afterkeydown'" placeholder="${ _('Search...') }">
+            <input class="input-small inline-tab-filter" type="text" data-bind="visible: queriesFilterVisible, clearable: queriesFilter, valueUpdate:'afterkeydown'" placeholder="${ _('Search...') }">
           </a>
         </li>
         % if ENABLE_QUERY_BUILDER.get():
@@ -1263,10 +686,12 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
         <li data-bind="click: function(){ currentQueryTab('queryResults'); }, css: {'active': currentQueryTab() == 'queryResults'}">
           <a class="inactive-action" href="#queryResults" data-toggle="tab">${_('Results')}
             <!-- ko if: result.rows() != null  -->
-              (<span data-bind="text: result.rows().toLocaleString()" title="${ _('Number of rows') }"></span>)
+              (<span data-bind="text: result.rows().toLocaleString() + (type() == 'impala' && result.rows() == 1024 ? '+' : '')" title="${ _('Number of rows') }"></span>)
             <!-- /ko -->
+            <!-- ko if: showGrid -->
             <div class="inline-block inactive-action margin-left-10 pointer" title="${_('Search the results')}" data-bind="click: function(data, e){ $(e.target).parents('.snippet').find('.resultTable').hueDataTable().fnShowSearch() }"><i class="snippet-icon fa fa-search"></i></div>
-            <div class="inline-block inactive-action pointer" title="${_('Expand results')}" rel="tooltip" data-bind="visible: !$root.isFullscreenMode() && !$root.isPlayerMode(), click: function(){ $root.isPlayerMode(true); }"><i class="snippet-icon fa fa-expand"></i></div>
+            <!-- /ko -->
+            <div class="inline-block inactive-action pointer" title="${_('Expand results')}" rel="tooltip" data-bind="css: { 'margin-left-10': !showGrid()}, visible: !$root.isFullscreenMode() && !$root.isPlayerMode(), click: function(){ $root.isPlayerMode(true); }"><i class="snippet-icon fa fa-expand"></i></div>
             <div class="inline-block inactive-action pointer" title="${_('Collapse results')}" rel="tooltip" data-bind="visible: !$root.isFullscreenMode() && $root.isPlayerMode(), click: function(){ $root.isPlayerMode(false); }"><i class="snippet-icon fa fa-compress"></i></div>
           </a>
         </li>
@@ -1325,10 +750,19 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
                     <!-- /ko -->
                   </td>
                   <td style="width: 25px" class="muted" data-bind="ellipsis: {data: name(), length: 30}, style: {'border-top-width': $index() == 0 ? '0' : ''}"></td>
-                  <td data-bind="style: {'border-top-width': $index() == 0 ? '0' : ''}"><div data-bind="highlight: query(), flavor: $parent.type" class="history-item"></div></td>
+                  <td data-bind="style: {'border-top-width': $index() == 0 ? '0' : ''}"><div data-bind="highlight: { value: query, dialect: $parent.type }"></div></td>
                 </tr>
               </tbody>
             </table>
+            <!-- /ko -->
+            <!-- ko with: $parent -->
+            <div class="pagination" data-bind="visible: historyTotalPages() > 1">
+            <ul>
+              <li data-bind="css: { 'disabled' : historyCurrentPage() === 1 }"><a href="javascript: void(0);" data-bind="click: function() { prevHistoryPage(); }">${ _("Prev") }</a></li>
+              <li class="active"><span data-bind="text: historyCurrentPage() + '/' + historyTotalPages()"></span></li>
+              <li data-bind="css: { 'disabled' : historyCurrentPage() === historyTotalPages() }"><a href="javascript: void(0);" data-bind="click: function() { nextHistoryPage(); }">${ _("Next") }</a></li>
+            </ul>
+            </div>
             <!-- /ko -->
           <!-- /ko -->
         </div>
@@ -1359,11 +793,11 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
               </tr>
             </thead>
             <tbody data-bind="foreach: queries">
-            <tr data-bind="click: function() { if (uuid != $root.selectedNotebook().uuid()) { $root.openNotebook(uuid, 'savedQueries'); } }, css: { 'highlight': uuid == $root.selectedNotebook().uuid(), 'pointer': uuid != $root.selectedNotebook().uuid() }">
-              <td style="width: 16%"><span data-bind="ellipsis: {data: name, length: 50}"></span></td>
+            <tr data-bind="click: function() { if (uuid() != $root.selectedNotebook().uuid()) { $root.openNotebook(uuid(), 'savedQueries'); } }, css: { 'highlight': uuid() == $root.selectedNotebook().uuid(), 'pointer': uuid() != $root.selectedNotebook().uuid() }">
+              <td style="width: 16%"><span data-bind="ellipsis: {data: name(), length: 50}"></span></td>
               <td style="width: 50%; white-space: normal"><span data-bind="text: description"></span></td>
               <td style="width: 18%"><span data-bind="text: owner"></span></td>
-              <td style="width: 16%"><span data-bind="text: localeFormat(last_modified)"></span></td>
+              <td style="width: 16%"><span data-bind="text: localeFormat(last_modified())"></span></td>
             </tr>
             </tbody>
           </table>
@@ -1386,6 +820,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
                 <th width="10%">${ _('Table') }</th>
                 <th>${ _('Column') }</th>
                 <th width="10%">${ _('Operation') }</th>
+                <th width="5%">&nbsp;</th>
                 <th width="1%">&nbsp;</th>
               </tr>
             </thead>
@@ -1425,14 +860,21 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 </script>
 
 <script type="text/html" id="longer-operation">
-  <div rel="tooltip" data-placement="bottom" data-bind="tooltip, fadeVisible: showLongOperationWarning" title="${ _('The operation in the server is taking longer than expected') }" class="inline-block">
-    <i  class="fa fa-exclamation-triangle warning"></i>
+  <div rel="tooltip" data-placement="bottom" data-bind="tooltip, fadeVisible: showLongOperationWarning" title="${ _('The query is hanging and taking longer than expected.') }" class="inline-block margin-right-10">
+    <i class="fa fa-exclamation-triangle warning"></i>
+  </div>
+</script>
+
+<script type="text/html" id="query-redacted">
+  <div rel="tooltip" data-placement="bottom" data-bind="tooltip, fadeVisible: is_redacted" title="${ _('The current query has been redacted to hide sensitive information.') }" class="inline-block margin-right-10">
+    <i class="fa fa-low-vision warning"></i>
   </div>
 </script>
 
 <script type="text/html" id="notebook-snippet-header">
   <div class="inactive-action hover-actions inline"><span class="inactive-action" data-bind="css: { 'empty-title': name() === '' }, editable: name, editableOptions: { emptytext: '${_ko('My Snippet')}', mode: 'inline', enabled: true, placement: 'right' }" style="border:none;color: #DDD"></span></div>
   <div class="hover-actions inline pull-right" style="font-size: 15px;">
+    <!-- ko template: { name: 'query-redacted' } --><!-- /ko -->
     <!-- ko template: { name: 'longer-operation' } --><!-- /ko -->
     <a class="inactive-action" href="javascript:void(0)" data-bind="visible: status() != 'ready' && status() != 'loading' && errors().length == 0, click: function() { hideFixedHeaders(); $data.showLogs(!$data.showLogs());}, css: {'blue': $data.showLogs}" title="${ _('Show Logs') }"><i class="fa fa-file-text-o"></i></a>
     <span class="execution-timer" data-bind="visible: type() != 'text' && status() != 'ready' && status() != 'loading', text: result.executionTime().toHHMMSS()" title="${ _('Execution time') }"></span>
@@ -1447,6 +889,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 
 <script type="text/html" id="editor-snippet-header">
   <div class="hover-actions inline pull-right" style="font-size: 15px; position: relative;" data-bind="style: { 'marginRight': $root.editorMode() && !$root.isFullscreenMode() && $root.isPlayerMode() ? '40px' : '0' }">
+    <!-- ko template: { name: 'query-redacted' } --><!-- /ko -->
     <!-- ko template: { name: 'longer-operation' } --><!-- /ko -->
     <span class="execution-timer" data-bind="visible: type() != 'text' && status() != 'ready' && status() != 'loading', text: result.executionTime().toHHMMSS()" title="${ _('Execution time') }"></span>
     <!-- ko if: availableDatabases().length > 0 && isSqlDialect() -->
@@ -1472,8 +915,8 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 </script>
 
 <script type="text/html" id="snippet">
-  <div data-bind="visibleOnHover: { override: inFocus() || settingsVisible() || dbSelectionVisible() || $root.editorMode(), selector: '.hover-actions' }">
-    <div class="snippet-container row-fluid" data-bind="visibleOnHover: { override: $root.editorMode() || inFocus, selector: '.snippet-actions' }">
+  <div data-bind="visibleOnHover: { override: inFocus() || settingsVisible() || dbSelectionVisible() || $root.editorMode() || saveResultsModalVisible(), selector: '.hover-actions' }">
+    <div class="snippet-container row-fluid" data-bind="visibleOnHover: { override: $root.editorMode() || inFocus() || saveResultsModalVisible(), selector: '.snippet-actions' }">
       <div class="snippet card card-widget" data-bind="css: {'notebook-snippet' : ! $root.editorMode(), 'editor-mode': $root.editorMode(), 'active-editor': inFocus, 'snippet-text' : type() == 'text'}, attr: {'id': 'snippet_' + id()}, clickForAceFocus: ace">
         <div style="position: relative;">
           <div class="snippet-row" style="position: relative;">
@@ -1544,79 +987,132 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 </script>
 
 <script type="text/html" id="code-editor-snippet-body">
-  <div class="alert alert-gradient" data-bind="visible: is_redacted">
-    <div style="float:left;">
-      <svg class="hi" style="height: 20px; width: 20px;">
-        <use xlink:href="#hi-warning"></use>
-      </svg>
-    </div>
-    <div style="margin-left: 30px; line-height:20px;vertical-align: middle;">${ _('The current query has been redacted to hide sensitive information.') }</div>
-  </div>
-
-  <div class="alert alert-error alert-error-gradient" data-bind="visible: hasComplexity">
-    <div style="float:left;">
-      <svg class="hi" style="height: 20px; width: 20px;">
-        <use xlink:href="#hi-warning"></use>
-      </svg>
-    </div>
-    <!-- ko if: hasComplexity -->
-    <div style="margin-left: 30px; line-height: 20px; vertical-align: middle;">
-      <!-- ko if: complexity().risk().length == 0 -->
-        <span style="margin-right:10px; font-weight: bold;">
-          ${ _('No risks were detected in this query.') }
-        </span>
-      <!-- /ko -->
-      <span style="margin-right:10px; font-weight: bold;" data-bind="text: complexity().risk"></span>
-      <span data-bind="text: complexity().riskAnalysis"></span>
-      <span data-bind="text: complexity().riskRecommendation"></span>
+  <!-- ko if: HAS_OPTIMIZER && (type() == 'impala' || type() == 'hive') -->
+  <div data-bind="css: { 'active': showOptimizer }">
+    <div class="round-icon empty">&nbsp;</div>
+    <!-- ko if: hasSuggestion() == null -->
+    <div class="round-icon idle">
+      <i class="fa" data-bind="css: {'fa-spinner fa-spin': complexityCheckRunning}"></i>
     </div>
     <!-- /ko -->
-  </div>
 
-  <div class="alert" data-bind="visible: hasSuggestion">
-    <div style="float:left;">
-      <svg class="hi" style="height: 20px; width: 20px;">
-        <use xlink:href="#hi-warning"></use>
-      </svg>
-    </div>
-    <div style="margin-left: 30px; line-height:20px; vertical-align: middle;">
-      <!-- ko if: hasSuggestion -->
+    <!-- ko if: hasSuggestion() -->
       <!-- ko with: suggestion() -->
-        <!-- ko if: queryError.encounteredString().length == 0 && ! parseError -->
-          ${ _('The query is compatible!') } <a href="javascript:void(0)" data-bind="click: function() { $parent.type('impala') }">${ _('Execute with Impala?') }</a>
-        <!-- /ko -->
         <!-- ko if: parseError -->
-          <span data-bind="text: parseError"></span>
+          <!-- ko if: $parent.compatibilityTargetPlatform() == $parent.type() && $parent.compatibilitySourcePlatform() == $parent.type() -->
+            <div class="round-icon error" data-bind="click: function(){ $parent.showOptimizer(! $parent.showOptimizer()) }, attr: { 'title': $parent.showOptimizer() ? '${ _ko('Close Validator') }' : '${ _ko('Open Validator') }'}">
+              <i class="fa fa-exclamation"></i>
+            </div>
+            <!-- ko if: $parent.showOptimizer -->
+              <span class="optimizer-explanation alert-error alert-neutral">${ _('The query has a parse error.') }</span>
+            <!-- /ko -->
+          <!-- /ko -->
+          ## Oracle, MySQL compatibility... as they return a parseError and not encounteredString.
+          <!-- ko if: $parent.compatibilityTargetPlatform() != $parent.type() || $parent.type() != $parent.compatibilitySourcePlatform() -->
+            <div class="round-icon warning" data-bind="click: function(){ $parent.showOptimizer(! $parent.showOptimizer()) }, attr: { 'title': $parent.showOptimizer() ? '${ _ko('Close Validator') }' : '${ _ko('Open Validator') }'}">
+              <i class="fa fa-exclamation"></i>
+            </div>
+            <!-- ko if: $parent.showOptimizer -->
+              <span class="optimizer-explanation alert-warning alert-neutral">${ _('This ') } <span data-bind="text: $parent.compatibilitySourcePlatform"></span> ${ _(' query is not compatible with ') } <span data-bind="text: $parent.compatibilityTargetPlatform"></span>.</span>
+            <!-- /ko -->
+          <!-- /ko -->
         <!-- /ko -->
-        <!-- ko if: queryError.encounteredString -->
-          ${ _('Query is not compatible with Impala.') }
-          <br>
-          <span data-bind="text: queryError.encounteredString"></span>
-          <span data-bind="text: queryError.errorString"></span>
+        <!-- ko if: !parseError() && ($parent.compatibilityTargetPlatform() != $parent.type() || $parent.compatibilitySourcePlatform() != $parent.type()) -->
+          <!-- ko if: queryError.encounteredString().length == 0 -->
+            <div class="round-icon success" data-bind="click: function(){ $parent.showOptimizer(! $parent.showOptimizer()) }, attr: { 'title': $parent.showOptimizer() ? '${ _ko('Close Validator') }' : '${ _ko('Open Validator') }'}">
+              <i class="fa fa-check"></i>
+            </div>
+            <!-- ko if: $parent.showOptimizer -->
+            <span class="optimizer-explanation alert-success alert-neutral">
+              ${ _('The ') } <select data-bind="options: $parent.compatibilitySourcePlatforms, optionsText: 'name', value: $parent.compatibilitySourcePlatform, optionsValue: 'value'" class="input-medium"></select>
+              <!-- ko if: $parent.compatibilitySourcePlatform() == $parent.type() -->
+                ${ _(' query is compatible with ') } <span data-bind="text: $parent.compatibilityTargetPlatform"></span>.
+                <a href="javascript:void(0)" data-bind="click: function() { $parent.type($parent.compatibilityTargetPlatform()); }">${ _('Execute it with ') } <span data-bind="text: $parent.compatibilityTargetPlatform"></span></a>.
+              <!-- /ko -->
+              <!-- ko if: $parent.compatibilitySourcePlatform() != $parent.type() -->
+                ${ _(' query is compatible with ') } <span data-bind="text: $parent.compatibilityTargetPlatform"></span>.
+              <!-- /ko -->
+            </span>
+          <!-- /ko -->
         <!-- /ko -->
-        <!-- ko if: queryError.expectedString -->
-          <br>
-          <!-- ko if: queryError.expectedString -->
-            <span data-bind="text: queryError.expectedString"></span>
+        <!-- ko ifnot: queryError.encounteredString().length == 0 -->
+          <div class="round-icon warning" data-bind="click: function(){ $parent.showOptimizer(! $parent.showOptimizer()) }, attr: { 'title': $parent.showOptimizer() ? '${ _ko('Close Validator') }' : '${ _ko('Open Validator') }'}">
+            <i class="fa fa-exclamation"></i>
+          </div>
+          <!-- ko if: $parent.showOptimizer -->
+            <span class="optimizer-explanation alert-warning alert-neutral">${ _('This query is not compatible with ') } <span data-bind="text: $parent.compatibilityTargetPlatform"></span>.</span>
           <!-- /ko -->
         <!-- /ko -->
       <!-- /ko -->
       <!-- /ko -->
-    </div>
+    <!-- /ko -->
+    <!-- ko if: ! hasSuggestion() && topRisk() -->
+      <!-- ko if: topRisk().risk === 'low' -->
+        <div class="round-icon success" data-bind="click: function(){ showOptimizer(! showOptimizer()) }, attr: { 'title': showOptimizer() ? '${ _ko('Close Validator') }' : '${ _ko('Open Validator') }'}">
+          <i class="fa fa-check"></i>
+        </div>
+        <!-- ko if: showOptimizer -->
+        <span class="optimizer-explanation alert-info alert-neutral">
+          ${ _('Some low risks were detected.') }
+        </span>
+        <!-- /ko -->
+      <!-- /ko -->
+      <!-- ko if: topRisk().risk == 'medium' -->
+        <div class="round-icon warning" data-bind="click: function(){ showOptimizer(! showOptimizer()) }, attr: { 'title': showOptimizer() ? '${ _ko('Close Validator') }' : '${ _ko('Open Validator') }'}">
+          <i class="fa fa-exclamation"></i>
+        </div>
+        <!-- ko if: showOptimizer -->
+        <span class="optimizer-explanation alert-warning alert-neutral">
+          ${ _('Some medium risks were detected.') }
+        </span>
+        <!-- /ko -->
+      <!-- /ko -->
+      <!-- ko if: topRisk().risk == 'high' -->
+        <div class="round-icon error" data-bind="click: function(){ showOptimizer(! showOptimizer()) }, attr: { 'title': showOptimizer() ? '${ _ko('Close Validator') }' : '${ _ko('Open Validator') }'}">
+          <i class="fa fa-exclamation"></i>
+        </div>
+        <!-- ko if: showOptimizer -->
+        <span class="optimizer-explanation alert-error alert-neutral">
+          ${ _('Some high risks were detected.') }
+        </span>
+        <!-- /ko -->
+      <!-- /ko -->
+    <!-- /ko -->
+    <!-- ko if: hasSuggestion() == '' && ! topRisk() -->
+      <div class="round-icon success" data-bind="click: function(){ showOptimizer(! showOptimizer()) }, attr: { 'title': showOptimizer() ? '${ _ko('Close Validator') }' : '${ _ko('Open Validator') }'}">
+        <i class="fa fa-check"></i>
+      </div>
+      <!-- ko if: showOptimizer -->
+        <span class="optimizer-explanation alert-success alert-neutral">${ _('Query validated.') }</span>
+      <!-- /ko -->
+    <!-- /ko -->
+    <!-- ko if: hasSuggestion() == 'error'  -->
+      <div class="round-icon idle" data-bind="click: function(){ showOptimizer(! showOptimizer()) }, attr: { 'title': showOptimizer() ? '${ _ko('Close Validator') }' : '${ _ko('Open Validator') }'}">
+        <i class="fa"></i>
+      </div>
+      <!-- ko if: showOptimizer -->
+        <span class="optimizer-explanation alert-neutral">${ _('Not validated.') }</span>
+      <!-- /ko -->
+    <!-- /ko -->
   </div>
+  <!-- /ko -->
+
+
   <div class="row-fluid" style="margin-bottom: 5px">
 
     <div class="editor span12" data-bind="css: {'single-snippet-editor ace-container-resizable' : $root.editorMode() }, clickForAceFocus: ace">
       <!-- ko if: statementType() == 'file' -->
         <div class="margin-top-10">
           <label class="pull-left" style="margin-top: 6px;margin-right: 10px;">${_('Query File')}</label>
-          <input type="text" class="pull-left input-xxlarge filechooser-input" data-bind="value: statementPath, valueUpdate: 'afterkeydown', filechooser: statementPath, filechooserOptions: { skipInitialPathIfEmpty: true, linkMarkup: true }" placeholder="${ _('Path to file, e.g. /user/hue/sample.sql, s3a://hue/sample.sql') }"/>
+          <input type="text" class="pull-left input-xxlarge filechooser-input" data-bind="value: statementPath, valueUpdate: 'afterkeydown', filechooser: statementPath, filechooserOptions: { skipInitialPathIfEmpty: true, linkMarkup: true }" placeholder="${ _('Path to file, e.g. /user/hue/sample.sql') }"/>
           <!-- ko if: statementPath() -->
           <div class="inline-block" style="margin-top: 4px">
             <a data-bind="attr: { href: '/filebrowser/view=' + statementPath() }" target="_blank" title="${ _('Open in new tab') }">
               <i class="fa fa-external-link-square"></i>
             </a>
           </div>
+          <a class="btn" data-bind="click: function() { getExternalStatement(); }"> <i class="fa fa-lg fa-refresh"/> </a>
+          <a class="btn" data-bind="tooltip: { placement: 'bottom', title: 'Save content back to file' }, click: function() { huePubSub.publish('show.saveToFile.modal'); }"><i class="fa fa-save"></i></a>
           <!-- /ko -->
         </div>
         <div class="clearfix margin-bottom-20"></div>
@@ -1646,11 +1142,10 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
       <div class="ace-editor" data-bind="visible: statementType() === 'text' || statementType() !== 'text' && externalStatementLoaded(), css: {'single-snippet-editor ace-editor-resizable' : $root.editorMode(), 'active-editor': inFocus }, attr: { id: id() }, delayedOverflow, aceEditor: {
         snippet: $data,
         contextTooltip: '${ _ko("Right-click for details") }',
-        expandStar: '${ _ko("Shift + Click to replace with all columns") }',
+        expandStar: '${ _ko("Right-click to expand with columns") }',
         onBlur: saveTemporarySnippet,
         highlightedRange: result.statement_range,
         useNewAutocompleter: $root.useNewAutocompleter,
-        readOnly: statementType() !== 'text',
         aceOptions: {
           showLineNumbers: $root.editorMode(),
           showGutter: $root.editorMode(),
@@ -1890,7 +1385,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
         <!-- ko if: result.images().length != 0 -->
         <ul class="unstyled results-images" data-bind="foreach: result.images()">
           <li>
-            <img data-bind="attr: {'src': 'data:image/png;base64,' + $data}" class="margin-bottom-10" />
+            <img data-bind="attr: {'src': 'data:image/png;base64,' + $data}" class="margin-bottom-10"  alt="${ _('Result image') }"/>
           </li>
         </ul>
         <!-- /ko -->
@@ -1905,10 +1400,10 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
           </div>
           <div class="grid-side" data-bind="css: {'span9': isResultSettingsVisible, 'span12 nomargin': ! isResultSettingsVisible() }">
             <div data-bind="visible: showGrid, delayedOverflow, css: resultsKlass" style="display: none;">
-              <table class="table table-condensed table-striped resultTable">
+              <table class="table table-condensed resultTable">
                 <thead>
                 <tr data-bind="foreach: result.meta">
-                  <th class="sorting" data-bind="text: ($index() == 0 ? '&nbsp;' : $data.name), css: typeof cssClass != 'undefined' ? cssClass : 'sort-string', attr: {title: $data.type }, style:{'width': $index() == 0 ? '1%' : ''}, click: function(obj, e){ $(e.target).parents('table').trigger('sort', obj); }"></th>
+                  <th class="sorting" data-bind="text: ($index() == 0 ? '&nbsp;' : $data.name), css: typeof cssClass != 'undefined' ? cssClass : 'sort-string', attr: {title: $data.type }, style:{'width': $index() == 0 ? '1%' : '', 'height': $index() == 0 ? '32px' : ''}, click: function(obj, e){ $(e.target).parents('table').trigger('sort', obj); }"></th>
                 </tr>
                 </thead>
                 <tbody>
@@ -2083,8 +1578,8 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 
 <script type="text/html" id="snippet-execution-status">
   <div class="snippet-execution-status" data-bind="clickForAceFocus: ace">
-    <div class="snippet-progress-container" data-bind="visible: status() != 'canceled'">
-      <div class="progress-snippet progress active" data-bind="css: {
+    <div class="snippet-progress-container" data-bind="visible: status() != 'canceled' && status() != 'with-optimizer-report'">
+      <div class="progress-snippet progress" data-bind="css: {
         'progress-starting': progress() == 0 && status() == 'running',
         'progress-warning': progress() > 0 && progress() < 100,
         'progress-success': progress() == 100,
@@ -2092,12 +1587,22 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
         <div class="bar" data-bind="style: {'width': (errors().length > 0 ? 100 : Math.max(2,progress())) + '%'}"></div>
       </div>
     </div>
-    <div class="snippet-error-container alert alert-error alert-error-gradient" style="margin-bottom: 0" data-bind="visible: errors().length > 0">
+    <div class="snippet-error-container alert alert-error" style="margin-bottom: 0" data-bind="visible: errors().length > 0">
       <ul class="unstyled" data-bind="foreach: errors">
         <li data-bind="text: message"></li>
       </ul>
     </div>
-    <div class="snippet-error-container alert alert-error alert-error-gradient" style="margin-bottom: 0" data-bind="visible: status() == 'canceled', click: function() { status('ready'); }" title="${ _('Click to hide') }">
+    <div class="snippet-error-container alert alert-error" style="margin-bottom: 0" data-bind="visible: aceErrors().length > 0">
+      <ul class="unstyled" data-bind="foreach: aceErrors">
+        <li data-bind="text: message"></li>
+      </ul>
+    </div>
+    <div class="snippet-error-container alert" style="margin-bottom: 0" data-bind="visible: aceWarnings().length > 0">
+      <ul class="unstyled" data-bind="foreach: aceWarnings">
+        <li data-bind="text: message"></li>
+      </ul>
+    </div>
+    <div class="snippet-error-container alert alert-error" style="margin-bottom: 0" data-bind="visible: status() == 'canceled', click: function() { status('ready'); }" title="${ _('Click to hide') }">
       <ul class="unstyled">
         <li>${ _("The statement was canceled.") }</li>
       </ul>
@@ -2128,9 +1633,11 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 
 <script type ="text/html" id="snippet-execution-controls">
   <div class="snippet-actions" style="position: absolute; bottom: 0">
-    <a class="snippet-side-btn blue" style="cursor: default;" data-bind="visible: status() == 'loading'" title="${ _('Creating session') }">
+    <!-- ko if: status() == 'loading' -->
+    <a class="snippet-side-btn blue" style="cursor: default;" title="${ _('Creating session') }">
       <i class="fa fa-fw fa-spinner fa-spin"></i>
     </a>
+    <!-- /ko -->
     <a class="snippet-side-btn" data-bind="click: reexecute, visible: $root.editorMode() && result.handle() && result.handle().has_more_statements, css: {'blue': $parent.history().length == 0 || $root.editorMode(), 'disabled': ! isReady() }" title="${ _('Restart from the first statement') }">
       <i class="fa fa-fw fa-repeat snippet-side-single"></i>
     </a>
@@ -2208,35 +1715,17 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
         <!-- ko if: HAS_OPTIMIZER -->
         <li class="divider"></li>
         <li>
-          <a href="javascript:void(0)" data-bind="click: function() { queryCompatibility(); }" title="${ _('Get syntax checks') }">
-            <i class="fa fa-fw fa-check"></i> ${_('Check syntax')}
+          <a href="javascript:void(0)" data-bind="click: function() { hasSuggestion(null); compatibilitySourcePlatform(type()); compatibilityTargetPlatform(type() == 'hive' ? 'impala' : 'hive'); queryCompatibility(); }, visible: type() == 'hive' || type() == 'impala'" title="${ _('Get hints on how to port SQL from other databases') }">
+            <i class="fa fa-fw fa-random"></i> ${_('Check compatibility')}
           </a>
         </li>
+        % if user.is_superuser:
         <li>
-          <a href="javascript:void(0)" data-bind="click: checkComplexity" title="${ _('Get recommendations on query risks and optimizations') }">
-            <i class="fa fa-fw fa-bolt"></i> ${_('Check complexity')}
-          </a>
-        </li>
-        <li>
-          <a href="javascript:void(0)" data-bind="click: function() { queryCompatibility('impala'); }, visible: type() == 'hive'" title="${ _('Get Impala compatibility hints') }">
-            <i class="fa fa-fw fa-random"></i> ${_('Check Impala compatibility')}
-          </a>
-        </li>
-        <li>
-          <a href="javascript:void(0)" data-bind="click: getSimilarQueries" title="${ _('Expand query with similar queries suggestions') }">
-            <i class="fa fa-fw fa-comments"></i> ${_('Show similarities')}
-          </a>
-        </li>
-        <li>
-          <a href="javascript:void(0)" data-bind="click: function() { loadQueryHistory(null); }" title="${ _('Load past query history in order to improve recommendations') }">
+          <a href="javascript:void(0)" data-bind="click: function() { huePubSub.publish('editor.workload.upload'); }" title="${ _('Load past query history in order to improve recommendations') }">
             <i class="fa fa-fw fa-cloud-upload"></i> ${_('Upload history')}
           </a>
         </li>
-        <li>
-          <a href="javascript:void(0)" data-bind="click: function() { loadQueryHistory(10); }" title="${ _('Load past query history in order to improve recommendations') }">
-            <i class="fa fa-fw fa-cloud-upload"></i> ${_('Upload last 10 history')}
-          </a>
-        </li>
+        % endif
         <!-- /ko -->
       </ul>
     </div>
@@ -2322,29 +1811,29 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 
 <div id="chooseFile" class="modal hide fade" style="z-index: 10000;" tabindex="-1">
   <div class="modal-header">
-      <a href="#" class="close" data-dismiss="modal">&times;</a>
-      <h3>${_('Choose a file')}</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${_('Choose a file')}</h2>
   </div>
   <div class="modal-body">
-      <div id="filechooser">
-      </div>
+    <div id="filechooser">
+    </div>
   </div>
   <div class="modal-footer">
   </div>
 </div>
 
 <div class="ace-filechooser">
-  <a class="pointer pull-right" data-bind="click: function(){ $('.filechooser').hide(); }"><i class="fa fa-times"></i></a>
+  <div class="ace-filechooser-close">
+    <a class="pointer" data-bind="click: function(){ $('.ace-filechooser').hide(); }"><i class="fa fa-times"></i></a>
+  </div>
   <div class="ace-filechooser-content">
-    <!--[if !IE]><!--><i class="fa fa-spinner fa-spin" style="font-size: 30px; color: #DDD"></i><!--<![endif]-->
-    <!--[if IE]><img src="${ static('desktop/art/spinner.gif') }"/><![endif]-->
   </div>
 </div>
 
 <div id="removeSnippetModal" class="modal hide fade">
   <div class="modal-header">
-    <a href="#" class="close" data-dismiss="modal">&times;</a>
-    <h3>${_('Confirm Remove')}</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${_('Confirm Remove')}</h2>
   </div>
   <div class="modal-body">
     <p>${_('Are you sure you want to remove this snippet?')}</p>
@@ -2368,12 +1857,12 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 
 <div id="saveAsModal" class="modal hide fade">
   <div class="modal-header">
-    <a href="#" class="close" data-dismiss="modal">&times;</a>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
     <!-- ko if: $root.editorMode() -->
-      <h3>${_('Save query as...')}</h3>
+    <h2 class="modal-title">${_('Save query as...')}</h2>
     <!-- /ko -->
     <!-- ko ifnot: $root.editorMode() -->
-      <h3>${_('Save notebook as...')}</h3>
+    <h2 class="modal-title">${_('Save notebook as...')}</h2>
     <!-- /ko -->
   </div>
 
@@ -2401,11 +1890,23 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
   <!-- /ko -->
 </div>
 
+<div id="saveToFileModal" class="modal hide fade">
+  <div class="modal-header">
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${_('Are you sure you want to save back to File?')}</h2>
+  </div>
+
+  <div class="modal-footer">
+    <a class="btn" data-dismiss="modal">${_('Cancel')}</a>
+    <input type="button" class="btn btn-primary disable-feedback" value="${_('Save')}" data-dismiss="modal" data-bind="click: function() { huePubSub.publish('save.snippet.to.file'); }"/>
+  </div>
+</div>
+
 
 <div id="authModal" class="modal hide fade">
   <div class="modal-header">
-    <a href="#" class="close" data-dismiss="modal">&times;</a>
-    <h3>${_('Connect to the data source')}</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${_('Connect to the data source')}</h2>
   </div>
   <div class="modal-body">
     <div class="row-fluid">
@@ -2432,8 +1933,8 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 
 <div id="clearHistoryModal" class="modal hide fade">
   <div class="modal-header">
-    <a href="#" class="close" data-dismiss="modal">&times;</a>
-    <h3>${_('Confirm History Clear')}</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${_('Confirm History Clear')}</h2>
   </div>
   <div class="modal-body">
     <p>${_('Are you sure you want to clear the query history?')}</p>
@@ -2448,7 +1949,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
   <!-- ko with: $root.selectedNotebook() -->
   <div id="retryModal" class="modal hide fade" data-keyboard="false" data-backdrop="static">
     <div class="modal-header">
-      <h3>${_('Operation timed out')}</h3>
+      <h2 class="modal-title">${_('Operation timed out')}</h2>
     </div>
     <div class="modal-body">
       <p>${_('The operation timed out. Do you want to retry?')}</p>
@@ -2468,49 +1969,26 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 
 <%def name="commonJS(is_embeddable=False, bindableElement='editorComponents')">
 
-<script type="text/javascript" charset="utf-8">
+<script type="text/javascript">
   % if is_embeddable:
   var MAIN_SCROLLABLE = '.page-content';
   % else:
   var MAIN_SCROLLABLE = '.content-panel';
   % endif
 
-  function authorizeGithub() {
-    if ($("#importGithubUrl").val().trim() != "") {
-      $(".fa-github").addClass("fa-spinner fa-spin");
-      $("#importGithubBtn").attr("disabled", "disabled");
-      $.getJSON("/notebook/api/github/authorize?currentURL=" + location.pathname + (location.search != "" ? location.search : "?github=true") + "&fetchURL=" + $("#importGithubUrl").val(), function (data) {
-        if (data.status == 0) {
-          $(".fa-github").removeClass("fa-spinner fa-spin");
-          $("#importGithubBtn").removeAttr("disabled");
-          $("#importGithubModal").modal("hide");
-          importGithub();
-        } else {
-          location.href = data.auth_url;
-        }
-      });
+  var isLeftNavOpen = false;
+  huePubSub.subscribe('left.nav.open.toggle', function(val) {
+    isLeftNavOpen = val;
+  }, 'editor');
+
+  var showHoverMsg = function (e) {
+    var dt = null;
+    if (e) {
+      dt = e.dataTransfer;
     }
-  }
-
-  function importGithub() {
-    $(".hoverText").html("<i class='fa fa-spinner fa-spin'></i>");
-    showHoverMsg();
-    $.get("api/github/fetch?url=" + $("#importGithubUrl").val().trim(), function(data){
-      if (data && data.content){
-        if ($.isArray(data.content)) { // it's a Hue Notebook
-          window.importExternalNotebook(JSON.parse(data.content[0].fields.data));
-        } else { // iPython / Zeppelin
-          window.parseExternalJSON(data.content);
-        }
-        $("#importGithubUrl").val("");
-      } else {
-        $.jHueNotify.error("${ _("Failed to load") } " + $("#importGithubUrl").val());
-      }
-    });
-  }
-
-  var showHoverMsg = function () {
-    $(".hoverMsg").removeClass("hide");
+    if (!isLeftNavOpen && (!dt || (dt.types && (dt.types.indexOf ? dt.types.indexOf('Files') != -1 : dt.types.contains('Files'))))) {
+      $(".hoverMsg").removeClass("hide");
+    }
   };
 
   var hideHoverMsg = function (vm) {
@@ -2522,44 +2000,10 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
     $(".hoverMsg").addClass("hide");
   };
 
-  function escapeMathJax(code) {
-    var escapeMap = {
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#x27;",
-      "`": "&#x60;"
-    };
-    var escaper = function (match) {
-      return escapeMap[match];
-    };
-    var source = "(?:" + Object.keys(escapeMap).join("|") + ")";
-    var testRegexp = RegExp(source);
-    var replaceRegexp = RegExp(source, "g");
-    code = code == null ? "" : "" + code;
-    return testRegexp.test(code) ? string.replace(replaceRegexp, escaper) : code;
-  }
-
-  var mathJaxTimeout = 0;
-
-  if (typeof MathJax == "undefined") {
-    escapeMathJax = function (code) {
-      return code;
-    }
-  }
-
   function renderMarkdown(text, snippetId) {
-    window.clearTimeout(mathJaxTimeout);
-
     text = text.replace(/([^$]*)([$]+[^$]*[$]+)?/g, function (a, text, code) {
-      return markdown.toHTML(text).replace(/^<p>|<\/p>$/g, '') + (code ? escapeMathJax(code) : '');
+      return markdown.toHTML(text).replace(/^<p>|<\/p>$/g, '') + (code ? code : '');
     });
-    if (typeof MathJax != "undefined") {
-      mathJaxTimeout = window.setTimeout(function () {
-        MathJax.Hub.Queue(["Typeset", MathJax.Hub, $("#liveMD" + snippetId)[0]]);
-      }, 500);
-    }
     return text;
   }
 
@@ -2604,19 +2048,21 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
         $(el).jHueTableExtender2({
           mainScrollable: MAIN_SCROLLABLE,
           % if is_embeddable:
-          stickToTopPosition: function() { return vm.isPlayerMode() ? 1 : 50 + bannerTopHeight },
+          stickToTopPosition: function() { return vm.isPlayerMode() ? 47 : 50 + bannerTopHeight },
           % else:
           stickToTopPosition: function() { return vm.isPlayerMode() ? 1 : 73 + bannerTopHeight },
           % endif
           parentId: 'snippet_' + snippet.id(),
-          clonedContainerPosition: "fixed"
+          clonedContainerPosition: 'fixed',
+          app: 'editor'
         });
         $(el).jHueHorizontalScrollbar();
       } else {
         $(el).jHueTableExtender2({
           mainScrollable: $(el).parents('.dataTables_wrapper')[0],
           parentId: 'snippet_' + snippet.id(),
-          clonedContainerPosition: "absolute"
+          clonedContainerPosition: 'absolute',
+          app: 'editor'
         });
       }
     }, 0);
@@ -2707,7 +2153,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
             _lastScrollPosition--; //hack for forcing fetching
           }
           if (_lastScrollPosition != scrollElement.scrollTop() && scrollElement.scrollTop() + scrollElement.outerHeight() + 20 >= scrollElement[0].scrollHeight && _dt && snippet.result.hasMore()) {
-            dataTableEl.animate({opacity: '0.55'}, 200);
+            huePubSub.publish('editor.snippet.result.gray', snippet);
             snippet.fetchResult(100, false);
           }
         }, 100);
@@ -3190,7 +2636,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
       user: '${ user.username }',
       userId: ${ user.id },
       % if is_embeddable:
-      responsive: true,
+      hue4: true,
       % endif
       assistAvailable: true,
       % if conf.USE_NEW_AUTOCOMPLETER.get():
@@ -3302,7 +2748,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
         },
         sqlite: {
           placeHolder: '${ _("Example: SELECT * FROM tablename, or press CTRL + space") }',
-          aceMode: 'ace/mode/sqlite',
+          aceMode: 'ace/mode/sql',
           snippetIcon: 'fa-database',
           sqlDialect: true
         },
@@ -3390,18 +2836,28 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
       splitDraggableTimeout = window.setTimeout(function () {
         redrawFixedHeaders(100);
       }, 200);
-    });
+    }, 'editor');
 
     huePubSub.subscribe('redraw.fixed.headers', function () {
       hideFixedHeaders();
       redrawFixedHeaders(200);
-    });
+    }, 'editor');
+
+    huePubSub.subscribe('app.gained.focus', function (app) {
+      if (app === 'editor') {
+        huePubSub.publish('redraw.fixed.headers');
+      }
+    }, 'editor');
+
+    huePubSub.subscribe('show.saveToFile.modal', function () {
+      $('#saveToFileModal').modal('show');
+    }, 'editor');
 
     huePubSub.subscribe('tab.switched', function (tab) {
       if (tab !== 'queryResults') {
         $('.hue-datatable-search').hide();
       }
-    });
+    }, 'editor');
 
     huePubSub.subscribe('detach.scrolls', function (snippet) {
       var scrollElement = $('#snippet_' + snippet.id()).find('.dataTables_wrapper');
@@ -3411,7 +2867,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
       if (scrollElement.data('scrollFnDt')) {
         scrollElement.off('scroll', scrollElement.data('scrollFnDt'));
       }
-    });
+    }, 'editor');
 
     huePubSub.subscribe('table.row.dblclick', function(data){
       var $el = $(data.table);
@@ -3431,7 +2887,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 
       $('#detailsModal').modal('show');
 
-    });
+    }, 'editor');
 
     window.redrawFixedHeaders = redrawFixedHeaders;
 
@@ -3603,7 +3059,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
         evt.dataTransfer.dropEffect = "copy";
       }
 
-      var dropZone = $("body")[0];
+      var dropZone = $('#${ bindableElement }')[0];
       dropZone.addEventListener("dragenter", showHoverMsg, false);
       dropZone.addEventListener("dragover", handleDragOver, false);
       dropZone.addEventListener("drop", handleFileSelect, false);
@@ -3641,15 +3097,26 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
       ko.applyBindings(viewModel, $('#${ bindableElement }')[0]);
       viewModel.init();
 
-      if (location.getParameter("github_status") != "") {
-        if (location.getParameter("github_status") == "0") {
-          $.jHueNotify.info("${ _('User successfully authenticated to GitHub.') }");
-          $("#importGithubUrl").val(location.getParameter("github_fetch"));
-          importGithub();
-        } else {
-          $.jHueNotify.error("${ _('Could not decode Github file content to JSON.') }");
-        }
-      }
+      huePubSub.subscribe("editor.table.stats.upload", function (activeTables) {
+        viewModel.selectedNotebook().snippets()[0].loadTableStats(activeTables);
+      });
+
+      huePubSub.subscribe("editor.workload.upload", function () {
+        viewModel.selectedNotebook().snippets()[0].loadQueryHistory(5);
+      });
+
+      huePubSub.subscribe('active.editor.statement.changed', function (statement) {
+        viewModel.selectedNotebook().snippets()[0].positionStatement(statement);
+      });
+
+      viewModel.selectedNotebook.subscribe(function (newVal) {
+        huePubSub.publish('selected.notebook.changed', newVal);
+      });
+
+      huePubSub.subscribe('get.selected.notebook', function () {
+        huePubSub.publish('set.selected.notebook', viewModel.selectedNotebook());
+      });
+
 
       var isAssistAvailable = viewModel.assistAvailable();
       var wasAssistVisible = viewModel.isLeftPanelVisible();
@@ -3662,6 +3129,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
       viewModel.isPlayerMode.subscribe(function (value) {
         if (value){
           $(".jHueNotify").hide();
+          huePubSub.publish('side.panels.hide');
           viewModel.assistAvailable(false);
           viewModel.isLeftPanelVisible(false);
           $(".navigator").hide();
@@ -3674,6 +3142,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
           redrawFixedHeaders(200);
           $(window).bind("keydown", "esc", exitPlayerMode);
         } else {
+          huePubSub.publish('side.panels.show');
           viewModel.isLeftPanelVisible(wasAssistVisible);
           viewModel.assistAvailable(isAssistAvailable);
           $(".navigator").show();
@@ -3690,7 +3159,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 
       huePubSub.subscribe('assist.set.manual.visibility', function () {
         wasAssistVisible = viewModel.isLeftPanelVisible();
-      });
+      }, 'editor');
 
       viewModel.isLeftPanelVisible.subscribe(function (value) {
         redrawFixedHeaders(200);
@@ -3715,11 +3184,11 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 
       huePubSub.subscribe('show.retry.modal', function (data) {
         $('#retryModal').modal('show');
-      });
+      }, 'editor');
 
       huePubSub.subscribe('hide.retry.modal', function (data) {
         $('#retryModal').modal('hide');
-      });
+      }, 'editor');
 
       // Close the notebook snippets when leaving the page
       window.onbeforeunload = function (e) {
@@ -3746,11 +3215,20 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
         return false;
       });
 
-      huePubSub.subscribe('editor.save', saveKeyHandler);
+      huePubSub.subscribe('editor.save', saveKeyHandler, 'editor');
 
       $(document).bind('keyup', function (e) {
-        if (e.keyCode == 191 && !$(e.target).is('input') && !$(e.target).is('textarea')) {
+        if (e.keyCode == 191 && e.shiftKey && !$(e.target).is('input') && !$(e.target).is('textarea')) {
           $('#helpModal').modal('show');
+        }
+
+        if (e.keyCode == 191 && !e.shiftKey && !$(e.target).is('input') && !$(e.target).is('textarea')) {
+          if (viewModel.editorMode() && viewModel.selectedNotebook().snippets()[0].currentQueryTab() == 'queryResults') {
+            e.preventDefault();
+            var $t = $("#snippet_" + viewModel.selectedNotebook().snippets()[0].id()).find(".resultTable");
+            $t.hueDataTable().fnShowSearch();
+            return false;
+          }
         }
       });
 
@@ -3759,7 +3237,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
           viewModel.selectedNotebook().newSnippet();
         }
         else {
-          viewModel.newNotebook(true);
+          viewModel.newNotebook(viewModel.editorType(), null, viewModel.selectedNotebook() ? viewModel.selectedNotebook().snippets()[0].currentQueryTab() : null);
         }
       }
 
@@ -3769,16 +3247,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
         return false;
       });
 
-      $(window).bind("keydown", "ctrl+f alt+f meta+f", function (e) {
-        if (viewModel.editorMode() && viewModel.selectedNotebook().snippets()[0].currentQueryTab() == 'queryResults') {
-          e.preventDefault();
-          var $t = $("#snippet_" + viewModel.selectedNotebook().snippets()[0].id()).find(".resultTable");
-          $t.hueDataTable().fnShowSearch();
-          return false;
-        }
-      });
-
-      huePubSub.subscribe('editor.create.new', newKeyHandler);
+      huePubSub.subscribe('editor.create.new', newKeyHandler, 'editor');
 
       var initialResizePosition = 100;
 
@@ -3827,12 +3296,9 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
       }
 
       function resetResultsResizer(snippet) {
-        var span3Width = 23.404255319148934;
-        var span9Width = 74.46808510638297;
-
-        $("#snippet_" + snippet.id()).find('.table-results .column-side').width(span3Width + '%').data('newWidth', span3Width);
+        $("#snippet_" + snippet.id()).find('.table-results .column-side').width(BOOTSTRAP_RATIOS.SPAN3() + '%').data('newWidth', BOOTSTRAP_RATIOS.SPAN3());
         if (snippet.isResultSettingsVisible()){
-          $("#snippet_" + snippet.id()).find('.table-results .grid-side').data('newWidth', span9Width).width(span9Width + '%');
+          $("#snippet_" + snippet.id()).find('.table-results .grid-side').data('newWidth', BOOTSTRAP_RATIOS.SPAN9()).width(BOOTSTRAP_RATIOS.SPAN9() + '%');
         }
         else {
           $("#snippet_" + snippet.id()).find('.table-results .grid-side').data('newWidth', 100).width('100%');
@@ -3850,7 +3316,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
           containment: $("#snippet_" + snippet.id()).find('.table-results'),
           create: function (event, ui) {
             initialPosition = $("#snippet_" + snippet.id()).find('.resize-bar').position().left;
-            $("#snippet_" + snippet.id()).find('.table-results .column-side').data('newWidth', span3Width);
+            $("#snippet_" + snippet.id()).find('.table-results .column-side').data('newWidth', BOOTSTRAP_RATIOS.SPAN3());
             $("#snippet_" + snippet.id()).find('.meta-filter').width($("#snippet_" + snippet.id()).find('.table-results .column-side').width() - 28)
           },
           drag: function (event, ui) {
@@ -3858,8 +3324,8 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
               initialPosition = $("#snippet_" + snippet.id()).find('.resize-bar').position().left;
             }
             ui.position.left = Math.max(150, ui.position.left);
-            var newSpan3Width = ui.position.left * span3Width / initialPosition;
-            var newSpan9Width = 100 - newSpan3Width - 2.127659574468085;
+            var newSpan3Width = ui.position.left * BOOTSTRAP_RATIOS.SPAN3() / initialPosition;
+            var newSpan9Width = 100 - newSpan3Width - BOOTSTRAP_RATIOS.MARGIN();
             $("#snippet_" + snippet.id()).find('.table-results .column-side').width(newSpan3Width + '%').data('newWidth', newSpan3Width);
             $("#snippet_" + snippet.id()).find('.table-results .grid-side').width(newSpan9Width + '%').data('newWidth', newSpan9Width);
             $("#snippet_" + snippet.id()).find('.meta-filter').width($("#snippet_" + snippet.id()).find('.table-results .column-side').width() - 28)
@@ -3879,7 +3345,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
             scrollInertia: 0
           });
           if (snippet.isResultSettingsVisible()){
-            $("#snippet_" + snippet.id()).find('.table-results .grid-side').width((100 - $("#snippet_" + snippet.id()).find('.table-results .column-side').data('newWidth') - 2.127659574468085) + '%');
+            $("#snippet_" + snippet.id()).find('.table-results .grid-side').width((100 - $("#snippet_" + snippet.id()).find('.table-results .column-side').data('newWidth') - BOOTSTRAP_RATIOS.MARGIN()) + '%');
           }
           else {
             $("#snippet_" + snippet.id()).find('.table-results .grid-side').width('100%');
@@ -3970,14 +3436,13 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
             }
             catch (e) {}
             var _dtElement = $("#snippet_" + options.snippet.id()).find(".dataTables_wrapper");
-            _dtElement.animate({opacity: '1'}, 50);
+            huePubSub.publish('editor.snippet.result.normal', options.snippet);
             _dtElement.scrollTop(_dtElement.data("scrollPosition"));
             redrawFixedHeaders();
             resizeToggleResultSettings(options.snippet, options.initial);
           }, 300);
         } else {
-          var _dtElement = $("#snippet_" + options.snippet.id()).find(".dataTables_wrapper");
-          _dtElement.animate({opacity: '1'}, 50);
+          huePubSub.publish('editor.snippet.result.normal', options.snippet);
         }
         $("#snippet_" + options.snippet.id()).find("select").trigger('chosen:updated');
         $('#snippet_' + options.snippet.id()).find('.snippet-grid-settings').mCustomScrollbar({axis: 'xy', theme: 'minimal-dark', scrollbarPosition: 'outside', mouseWheel:{ preventDefault: true, deltaFactor: 10 }, scrollInertia: 0});
@@ -3988,10 +3453,25 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
         }, 200)
       });
 
+      huePubSub.subscribe('editor.snippet.result.gray', function (snippet) {
+        var $snippet = $("#snippet_" + snippet.id());
+        $snippet.find(".dataTables_wrapper .fixed-first-column").css({opacity: '0'});
+        $snippet.find(".dataTables_wrapper .fixed-header-row").css({opacity: '0'});
+        $snippet.find(".dataTables_wrapper .fixed-first-cell").css({opacity: '0'});
+        $snippet.find(".dataTables_wrapper .resultTable").css({opacity: '0.55'});
+      }, 'editor');
+
+      huePubSub.subscribe('editor.snippet.result.normal', function (snippet) {
+        var $snippet = $("#snippet_" + snippet.id());
+        $snippet.find(".dataTables_wrapper .fixed-first-column").css({opacity: '1'});
+        $snippet.find(".dataTables_wrapper .fixed-header-row").css({opacity: '1'});
+        $snippet.find(".dataTables_wrapper .fixed-first-cell").css({opacity: '1'});
+        $snippet.find(".dataTables_wrapper .resultTable").css({opacity: '1'});
+      }, 'editor');
+
       $(document).on("renderDataError", function (e, options) {
-        var _dtElement = $("#snippet_" + options.snippet.id()).find(".dataTables_wrapper");
-        _dtElement.animate({opacity: '1'}, 50);
-      });
+        huePubSub.publish('editor.snippet.result.normal', options.snippet);
+      }, 'editor');
 
       $(document).on("progress", function (e, options) {
         if (options.data == 100) {
@@ -4006,17 +3486,11 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
         }
       });
 
-      $(document).on('shown', 'a[href="#scheduleTab"]', function(){
-        if (viewModel.selectedNotebook().schedulerViewModel == null) {
-          viewModel.selectedNotebook().loadScheduler();
-        }
-      });
-
       huePubSub.subscribe('render.jqcron', function(){
         if (typeof renderJqCron !== 'undefined'){
           renderJqCron();
         }
-      });
+      }, 'editor');
 
       huePubSub.subscribe('submit.popup.return', function (data) {
         viewModel.selectedNotebook().viewSchedulerId(data.job_id);
@@ -4024,7 +3498,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
         $('.submit-modal').modal('hide');
 
         $('a[href=\'#scheduledJobsTab\']').click();
-      });
+      }, 'editor');
 
       huePubSub.subscribe('jobbrowser.data', function (jobs) {
         if (jobs.length > 0) {
@@ -4046,7 +3520,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
             });
           }
         }
-      });
+      }, 'editor');
 
       $(document).on("gridShown", function (e, snippet) {
         window.setTimeout(function () {
@@ -4110,6 +3584,7 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 
       var _resizeTimeout = -1;
       $(window).on("resize", function () {
+        $('.notebook-name-desc').css('max-width', ($('.snippet-container').width()/4) + 'px');
         window.clearTimeout(_resizeTimeout);
         _resizeTimeout = window.setTimeout(function () {
           forceChartDraws();
@@ -4117,11 +3592,6 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
       });
     });
   })();
-
-  var mathjax = document.createElement("script");
-  mathjax.src = "//cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
-  mathjax.async = false;
-  document.head.appendChild(mathjax);
 </script>
 
 </%def>

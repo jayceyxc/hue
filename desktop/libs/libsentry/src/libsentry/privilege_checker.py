@@ -19,8 +19,12 @@ import logging
 
 from collections import defaultdict
 
+from django.core.cache import cache
+
 from libsentry.api import get_api as get_api_v1
 from libsentry.api2 import get_api as get_api_v2
+from libsentry.conf import PRIVILEGE_CHECKER_CACHING
+from libsentry.sentry_site import get_hive_sentry_provider
 
 
 LOG = logging.getLogger(__name__)
@@ -47,6 +51,24 @@ SENTRY_OBJECTS = (
 )
 
 SENTRY_PRIVILEGE_KEY = 'SENTRY_PRIVILEGE'
+SENTRY_PRIVILEGE_CACHE_KEY = 'checker-%(username)s'
+
+
+class MissingSentryPrivilegeException(Exception):
+  def __init__(self, objects=None):
+    self.objects = objects
+
+  def __str__(self):
+    return str(self.objects)
+
+
+def get_checker(user, checker=None):
+  cache_key = SENTRY_PRIVILEGE_CACHE_KEY % {'username': user.username}
+  checker = checker or cache.get(cache_key)
+  if not checker:
+    checker = PrivilegeChecker(user=user)
+    cache.set(cache_key, checker, PRIVILEGE_CHECKER_CACHING.get())
+  return checker
 
 
 class PrivilegeChecker(object):
@@ -58,6 +80,12 @@ class PrivilegeChecker(object):
     self.user = user
     self.api_v1 = api_v1 if api_v1 else get_api_v1(self.user)
     self.api_v2 = api_v2 if api_v2 else get_api_v2(self.user, component='solr')
+
+    privileges_v1 = self._get_privileges_for_user(self.api_v1)
+    self.privilege_hierarchy_v1 = self._to_privilege_hierarchy_v1(privileges_v1)
+
+    privileges_v2 = self._get_privileges_for_user(self.api_v2, serviceName=get_hive_sentry_provider())
+    self.privilege_hierarchy_v2 = self._to_privilege_hierarchy_v2(privileges_v2)
 
 
   def filter_objects(self, objects, action='READ', key=lambda x: x.copy()):
@@ -72,7 +100,6 @@ class PrivilegeChecker(object):
     :param key: a function that will be applied to each object in the objects iterable to convert it to a Sentry format
     """
     action = action.upper()
-    filtered_objects = []
 
     # Apply Sentry formatting key function
     object_authorizables = self._to_sentry_authorizables(objects=objects, key=key)
@@ -82,22 +109,14 @@ class PrivilegeChecker(object):
     v2_authorizables = [(obj, auth) for (obj, auth) in object_authorizables if 'component' in auth]
 
     if v1_authorizables:
-      privileges = self._get_privileges_for_user(self.api_v1)
-      privilege_hierarchy = self._to_privilege_hierarchy_v1(privileges)
-
       for (object, authorizable) in v1_authorizables:
-        if self._is_object_action_authorized_v1(hierarchy=privilege_hierarchy, object=authorizable, action=action):
-          filtered_objects.append(object)
+        if self._is_object_action_authorized_v1(hierarchy=self.privilege_hierarchy_v1, object=authorizable, action=action):
+          yield object
 
     if v2_authorizables:
-      privileges = self._get_privileges_for_user(self.api_v2)
-      privilege_hierarchy = self._to_privilege_hierarchy_v2(privileges)
-
       for (object, authorizable) in v2_authorizables:
-        if self._is_object_action_authorized_v2(hierarchy=privilege_hierarchy, object=authorizable, action=action):
-          filtered_objects.append(object)
-
-    return filtered_objects
+        if self._is_object_action_authorized_v2(hierarchy=self.privilege_hierarchy_v2, object=authorizable, action=action):
+          yield object
 
 
   def _to_sentry_authorizables(self, objects, key):
@@ -120,11 +139,14 @@ class PrivilegeChecker(object):
     return object_authorizables
 
 
-  def _get_privileges_for_user(self, api):
+  def _get_privileges_for_user(self, api, serviceName=None):
     privileges = []
     user_roles = api.list_sentry_roles_by_group('*')  # Get all roles for user
     for role in user_roles:
-      role_privileges = api.list_sentry_privileges_by_role(role['name'])
+      if serviceName is not None:
+        role_privileges = api.list_sentry_privileges_by_role(serviceName=serviceName, roleName=role['name'])
+      else:
+        role_privileges = api.list_sentry_privileges_by_role(role['name'])
       privileges.extend(role_privileges)  # This may result in duplicates but will get reduced in hierarchy tree
     return privileges
 

@@ -24,11 +24,15 @@ import uuid
 from tempfile import NamedTemporaryFile
 from urlparse import urlparse
 
+from django.utils.functional import wraps
 from django.utils.translation import ugettext as _
 
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib import export_csvxls
+from desktop.lib.i18n import smart_unicode
 from desktop.lib.rest.http_client import RestException
+from libsentry.sentry_site import get_hive_sentry_provider
+from libsentry.privilege_checker import get_checker, MissingSentryPrivilegeException
 from navoptapi.api_lib import ApiLib
 
 from metadata.conf import OPTIMIZER, get_optimizer_url
@@ -40,28 +44,82 @@ LOG = logging.getLogger(__name__)
 _JSON_CONTENT_TYPE = 'application/json'
 
 
+class NavOptException(Exception):
+  def __init__(self, message=None):
+    self.message = message or _('No error message, please check the logs.')
 
-class OptimizerApiException(PopupException):
-  pass
+  def __str__(self):
+    return str(self.message)
+
+  def __unicode__(self):
+    return smart_unicode(self.message)
+
+
+def check_privileges(view_func):
+  def decorate(*args, **kwargs):
+
+    if OPTIMIZER.APPLY_SENTRY_PERMISSIONS.get():
+      checker = get_checker(user=args[0].user)
+      action = 'SELECT'
+      objects = []
+
+      if kwargs.get('db_tables'):
+        for db_table in kwargs['db_tables']:
+          objects.append({'server': get_hive_sentry_provider(), 'db': _get_table_name(db_table)['database'], 'table': _get_table_name(db_table)['table']})
+      else:
+        objects = [{'server': get_hive_sentry_provider()}]
+        if kwargs.get('database_name'):
+          objects[0]['db'] = kwargs['database_name']
+        if kwargs.get('table_name'):
+          objects[0]['table'] = kwargs['table_name']
+
+      if len(list(checker.filter_objects(objects, action))) != len(objects):
+        raise MissingSentryPrivilegeException(objects)
+
+    return view_func(*args, **kwargs)
+  return wraps(view_func)(decorate)
+
+
+def _secure_results(results, user, action='SELECT'):
+    if OPTIMIZER.APPLY_SENTRY_PERMISSIONS.get():
+      checker = get_checker(user=user)
+
+      def getkey(result):
+        key = {'server': get_hive_sentry_provider()}
+
+        if 'dbName' in result:
+          key['db'] = result['dbName']
+        elif 'database' in result:
+          key['db'] = result['database']
+        if 'tableName' in result:
+          key['table'] = result['tableName']
+        elif 'table' in result:
+          key['table'] = result['table']
+        if 'columnName' in result:
+          key['column'] = result['columnName']
+        elif 'column' in result:
+          key['column'] = result['column']
+
+        return key
+
+      return checker.filter_objects(results, action, key=getkey)
+    else:
+      return results
 
 
 class OptimizerApi(object):
 
-  def __init__(self, api_url=None, product_name=None, product_secret=None, ssl_cert_ca_verify=OPTIMIZER.SSL_CERT_CA_VERIFY.get(), product_auth_secret=None):
+  def __init__(self, user, api_url=None, product_name=None, product_secret=None, ssl_cert_ca_verify=OPTIMIZER.SSL_CERT_CA_VERIFY.get(), product_auth_secret=None):
+    self.user = user
     self._api_url = (api_url or get_optimizer_url()).strip('/')
     self._email = OPTIMIZER.EMAIL.get()
     self._email_password = OPTIMIZER.EMAIL_PASSWORD.get()
     self._product_secret = product_secret if product_secret else OPTIMIZER.PRODUCT_SECRET.get()
     self._product_auth_secret = product_auth_secret if product_auth_secret else (OPTIMIZER.PRODUCT_AUTH_SECRET.get() and OPTIMIZER.PRODUCT_AUTH_SECRET.get().replace('\\n', '\n'))
-    self._product_name = product_name if product_name else (OPTIMIZER.PRODUCT_NAME.get() or self.get_tenant()['tenant']) # Aka "workload"
-
-#     self._client = HttpClient(self._api_url, logger=LOG)
-#     self._client.set_verify(ssl_cert_ca_verify)
-#
-#     self._root = resource.Resource(self._client)
-#     self._token = None
 
     self._api = ApiLib("navopt", urlparse(self._api_url).hostname, self._product_secret, self._product_auth_secret)
+
+    self._product_name = product_name if product_name else (OPTIMIZER.PRODUCT_NAME.get() or self.get_tenant()['tenant']) # Aka "workload"
 
   def _authenticate(self, force=False):
     if self._token is None or force:
@@ -69,42 +127,47 @@ class OptimizerApi(object):
 
     return self._token
 
+  def _call(self, *kwargs):
+    resp = self._api.call_api(*kwargs)
+    data = resp.json()
+
+    if resp.headers.get('x-altus-request-id'):
+      LOG.info('%s %s: %s' % (self.user, resp.headers['x-altus-request-id'], kwargs))
+
+    if data.get('code') == 'UNKNOWN':
+      raise NavOptException(data.get('message'))
+    elif data.get('errorMsg'):
+      raise NavOptException(data.get('errorMsg'))
+    else:
+      return data
 
   def get_tenant(self, email=None):
-    return self._api.call_api("getTenant", {"email" : email or self._email}).json()
+    return self._call("getTenant", {"email" : email or self._email})
 
 
   def create_tenant(self, group):
-    return self._api.call_api('createTenant', {'userGroup' : group}).json()
-
-
-  def authenticate(self):
-    try:
-      data = {
-          'productName': self._product_name,
-          'productSecret': self._product_secret,
-      }
-      return self._root.post('/api/authenticate', data=json.dumps(data), contenttype=_JSON_CONTENT_TYPE)
-    except RestException, e:
-      raise PopupException(e, title=_('Error while accessing Optimizer'))
-
-
-  def delete_workload(self, token, email=None):
-    try:
-      data = {
-          'email': email if email is not None else self._email,
-          'token': token,
-      }
-      return self._root.post('/api/deleteWorkload', data=json.dumps(data), contenttype=_JSON_CONTENT_TYPE)
-    except RestException, e:
-      raise PopupException(e, title=_('Error while accessing Optimizer'))
+    return self._call('createTenant', {'userGroup' : group})
 
 
   def upload(self, data, data_type='queries', source_platform='generic', workload_id=None):
     if data_type in ('table_stats', 'cols_stats'):
-      data_suffix = '.log'
+      data_suffix = '.json'
+      if data_type == 'table_stats':
+        extra_parameters = {'fileType': 'TABLE_STATS'}
+      else:
+        extra_parameters = {'fileType': 'COLUMN_STATS'}
     else:
       data_suffix = '.csv'
+      extra_parameters = {
+          'colDelim': ',',
+          'rowDelim': '\n',
+          "headerFields": [
+            {"count": 0, "name": "SQL_ID", "coltype": "SQL_ID", "use": True, "tag": ""},
+            {"count": 0, "name": "ELAPSED_TIME", "coltype": "NONE", "use": True, "tag": ""},
+            {"count": 0, "name": "SQL_FULLTEXT", "coltype": "SQL_QUERY", "use": True, "tag": ""},
+            {"count": 0, "name": "DATABASE", "coltype": "NONE", "use": True, "tag": "DATABASE"}
+          ],
+      }
 
     f_queries_path = NamedTemporaryFile(suffix=data_suffix)
     f_queries_path.close() # Reopened as real file below to work well with the command
@@ -113,214 +176,221 @@ class OptimizerApi(object):
       f_queries = open(f_queries_path.name, 'w+')
 
       try:
-        content_generator = OptimizerDataAdapter(data, data_type=data_type)
-        queries_csv = export_csvxls.create_generator(content_generator, 'csv')
+        # Queries
+        if data_suffix == '.csv':
+          content_generator = OptimizerQueryDataAdapter(data)
+          queries_csv = export_csvxls.create_generator(content_generator, 'csv')
 
-        for row in queries_csv:
-          f_queries.write(row)
+          for row in queries_csv:
+            f_queries.write(row)
+            LOG.debug(row)
+        else:
+          # Table, column stats
+          f_queries.write(json.dumps(data))
+          LOG.debug(json.dumps(data))
 
       finally:
         f_queries.close()
 
-      response = self._api.call_api('upload', {
+      parameters = {
           'tenant' : self._product_name,
           'fileLocation': f_queries.name,
           'sourcePlatform': source_platform,
-          'colDelim': ',',
-          'rowDelim': '\n',
-          'headerFields': OptimizerApi.UPLOAD[data_type]['headerFields']
-      })
-      return json.loads(response)
+      }
+      parameters.update(extra_parameters)
+      response = self._api.call_api('upload', parameters)
+      status = json.loads(response)
+
+      status['count'] = len(data)
+      return status
 
     except RestException, e:
       raise PopupException(e, title=_('Error while accessing Optimizer'))
     finally:
       os.remove(f_queries_path.name)
 
+
   def upload_status(self, workload_id):
-    return self._api.call_api('uploadStatus', {'tenant' : self._product_name, 'workloadId': workload_id}).json()
+    return self._call('uploadStatus', {'tenant' : self._product_name, 'workloadId': workload_id})
+
+  @check_privileges
+  def top_tables(self, workfloadId=None, database_name='default', page_size=1000, startingToken=None):
+    data = self._call('getTopTables', {'tenant' : self._product_name, 'dbName': database_name.lower(), 'pageSize': page_size, startingToken: startingToken})
+
+    if OPTIMIZER.APPLY_SENTRY_PERMISSIONS.get():
+      checker = get_checker(user=self.user)
+      action = 'SELECT'
+
+      def getkey(table):
+        names = _get_table_name(table['name'])
+        return {'server': get_hive_sentry_provider(), 'db': names['database'], 'table': names['table']}
+
+      data['results'] = list(checker.filter_objects(data['results'], action, key=getkey))
+
+    return data
+
+  @check_privileges
+  def table_details(self, database_name, table_name, page_size=100, startingToken=None):
+    return self._call('getTablesDetail', {'tenant' : self._product_name, 'dbName': database_name.lower(), 'tableName': table_name.lower(), 'pageSize': page_size, startingToken: startingToken})
 
 
-  def top_tables(self, workfloadId=None, database_name='default'):
-    return self._api.call_api('getTopTables', {'tenant' : self._product_name}).json()
+  def query_compatibility(self, source_platform, target_platform, query, page_size=100, startingToken=None):
+    return self._call('getQueryCompatible', {'tenant' : self._product_name, 'query': query, 'sourcePlatform': source_platform, 'targetPlatform': target_platform, startingToken: startingToken})
 
 
-  def table_details(self, database_name, table_name):
-    return self._api.call_api('getTablesDetail', {'tenant' : self._product_name, 'dbName': database_name.lower(), 'tableName': table_name.lower()}).json()
+  def query_risk(self, query, source_platform, db_name, page_size=100, startingToken=None):
+    response = self._call('getQueryRisk', {
+      'tenant' : self._product_name,
+      'query': query,
+      'dbName': db_name,
+      'sourcePlatform': source_platform,
+      'pageSize': page_size,
+      'startingToken': startingToken
+    })
+
+    hints = response.get(source_platform + 'Risk', {})
+
+    if hints and hints == [{"riskTables": [], "riskAnalysis": "", "riskId": 0, "risk": "low", "riskRecommendation": ""}]:
+      hints = []
+
+    return {
+      'hints': hints,
+      'noStats': response.get('noStats', []),
+      'noDDL': response.get('noDDL', []),
+    }
+
+  def similar_queries(self, source_platform, query, page_size=100, startingToken=None):
+    if self.user.is_superuser:
+      return self._call('getSimilarQueries', {'tenant' : self._product_name, 'sourcePlatform': source_platform, 'query': query, 'pageSize': page_size, startingToken: startingToken})
+    else:
+      raise PopupException(_('Call not supported'))
 
 
-  def query_compatibility(self, source_platform, target_platform, query):
-    return self._api.call_api('getQueryCompatible', {'tenant' : self._product_name, 'query': query, 'sourcePlatform': source_platform, 'targetPlatform': target_platform}).json()
-
-
-  def query_risk(self, query):
-    return self._api.call_api('getQueryRisk', {'tenant' : self._product_name, 'query': query}).json()
-
-
-  def similar_queries(self, source_platform, query):
-    return self._api.call_api('getSimilarQueries', {'tenant' : self._product_name, 'sourcePlatform': source_platform, 'query': query}).json()
-
-
-  def top_filters(self, db_tables=None):
+  @check_privileges
+  def top_filters(self, db_tables=None, page_size=100, startingToken=None):
     args = {
-      'tenant' : self._product_name
+      'tenant' : self._product_name,
+      'pageSize': page_size,
+      'startingToken': startingToken
     }
     if db_tables:
       args['dbTableList'] = [db_table.lower() for db_table in db_tables]
 
-    return self._api.call_api('getTopFilters', args).json()
+    results = self._call('getTopFilters', args)
+
+    if OPTIMIZER.APPLY_SENTRY_PERMISSIONS.get():
+      filtered_filters = []
+      for result in results['results']:
+        cols = [_get_table_name(col['columnName']) for col in result["popularValues"][0]["group"]]
+        if len(cols) == len(list(_secure_results(cols, self.user))):
+          filtered_filters.append(result)
+      results['results'] = filtered_filters
+    return results
 
 
-  def top_aggs(self, db_tables=None):
+  @check_privileges
+  def top_aggs(self, db_tables=None, page_size=100, startingToken=None):
     args = {
-      'tenant' : self._product_name
+      'tenant' : self._product_name,
+      'pageSize': page_size,
+      'startingToken': startingToken
     }
     if db_tables:
       args['dbTableList'] = [db_table.lower() for db_table in db_tables]
 
-    return self._api.call_api('getTopAggs', args).json()
+    results = self._call('getTopAggs', args)
+
+    if OPTIMIZER.APPLY_SENTRY_PERMISSIONS.get():
+      checker = get_checker(user=self.user)
+      action = 'SELECT'
+
+      def getkey(table):
+        names = table['aggregateInfo'][0]
+        names['server'] = get_hive_sentry_provider()
+        return names
+
+      results['results'] = list(checker.filter_objects(results['results'], action, key=getkey))
+
+    return results
 
 
-  def top_columns(self, db_tables=None):
+  @check_privileges
+  def top_columns(self, db_tables=None, page_size=100, startingToken=None):
     args = {
-      'tenant' : self._product_name
+      'tenant' : self._product_name,
+      'pageSize': page_size,
+      'startingToken': startingToken
     }
     if db_tables:
       args['dbTableList'] = [db_table.lower() for db_table in db_tables]
 
-    return self._api.call_api('getTopColumns', args).json()
+    results = self._call('getTopColumns', args)
+
+    if OPTIMIZER.APPLY_SENTRY_PERMISSIONS.get():
+      for section in ['orderbyColumns', 'selectColumns', 'filterColumns', 'joinColumns', 'groupbyColumns']:
+        results[section] = list(_secure_results(results[section], self.user))
+    return results
 
 
-  def top_joins(self, db_tables=None):
+  @check_privileges
+  def top_joins(self, db_tables=None, page_size=100, startingToken=None):
     args = {
-      'tenant' : self._product_name
+      'tenant' : self._product_name,
+      'pageSize': page_size,
+      'startingToken': startingToken
     }
     if db_tables:
       args['dbTableList'] = [db_table.lower() for db_table in db_tables]
 
-    return self._api.call_api('getTopJoins', args).json()
+    results = self._call('getTopJoins', args)
+
+    if OPTIMIZER.APPLY_SENTRY_PERMISSIONS.get():
+      filtered_joins = []
+      for result in results['results']:
+        cols = [_get_table_name(col) for col in result["joinCols"][0]["columns"]]
+        if len(cols) == len(list(_secure_results(cols, self.user))):
+          filtered_joins.append(result)
+      results['results'] = filtered_joins
+    return results
 
 
-  def top_databases(self, db_tables=None):
+  def top_databases(self, page_size=100, startingToken=None):
     args = {
-      'tenant' : self._product_name
+      'tenant' : self._product_name,
+      'pageSize': page_size,
+      'startingToken': startingToken
     }
 
-    return self._api.call_api('getTopDataBases', args).json()
+    data = self._call('getTopDatabases', args)
+
+    if OPTIMIZER.APPLY_SENTRY_PERMISSIONS.get():
+      data['results'] = list(_secure_results(data['results'], self.user))
+
+    return data
 
 
-  UPLOAD = {
-    'queries': {
-      'headers': ['SQL_ID', 'ELAPSED_TIME', 'SQL_FULLTEXT'],
-      "colDelim": ",",
-      "rowDelim": "\\n",
-      "headerFields": [
-          {
-              "count": 0,
-              "coltype": "SQL_ID",
-              "use": True,
-              "tag": "",
-              "name": "SQL_ID"
-          },
-          {
-              "count": 0,
-              "coltype": "NONE",
-              "use": True,
-              "tag": "",
-              "name": "ELAPSED_TIME"
-          },
-          {
-              "count": 0,
-              "coltype": "SQL_QUERY",
-              "use": True,
-              "tag": "",
-              "name": "SQL_FULLTEXT"
-          }
-      ]
-    },
-    'table_stats': {
-        'headers': ['TABLE_NAME', 'NUM_ROWS'],
-        "colDelim": ",",
-        "rowDelim": "\\n",
-        "headerFields": [
-            {
-                "count": 0,
-                "coltype": "NONE",
-                "use": True,
-                "tag": "",
-                "name": "TABLE_NAME"
-            },
-            {
-                "count": 0,
-                "coltype": "NONE",
-                "use": True,
-                "tag": "",
-                "name": "NUM_ROWS"
-            }
-        ]
-    },
-    'cols_stats': {
-        'headers': ['table_name', 'column_name', 'data_type', 'num_distinct', 'num_nulls', 'avg_col_len'], # Lower case for some reason
-        "colDelim": ",",
-        "rowDelim": "\\n",
-        "headerFields": [
-            {
-                "count": 0,
-                "coltype": "NONE",
-                "use": True,
-                "tag": "",
-                "name": "table_name"
-            },
-            {
-                "count": 0,
-                "coltype": "NONE",
-                "use": True,
-                "tag": "",
-                "name": "column_name"
-            },
-            {
-                "count": 0,
-                "coltype": "NONE",
-                "use": True,
-                "tag": "",
-                "name": "data_type"
-            },
-            {
-                "count": 0,
-                "coltype": "NONE",
-                "use": True,
-                "tag": "",
-                "name": "num_distinct"
-            },
-            {
-                "count": 0,
-                "coltype": "NONE",
-                "use": True,
-                "tag": "",
-                "name": "num_nulls"
-            },
-            {
-                "count": 0,
-                "coltype": "NONE",
-                "use": True,
-                "tag": "",
-                "name": "avg_col_len"
-            }
-        ]
-    }
-  }
+def OptimizerQueryDataAdapter(data):
+  headers = ['SQL_ID', 'ELAPSED_TIME', 'SQL_FULLTEXT', 'DATABASE']
 
-
-def OptimizerDataAdapter(data, data_type='queries'):
-  headers = OptimizerApi.UPLOAD[data_type]['headers']
-
-  if data_type in ('table_stats', 'cols_stats'):
+  if data and len(data[0]) == 4:
     rows = data
   else:
-    if data and len(data[0]) == 3:
-      rows = data
-    else:
-      rows = ([str(uuid.uuid4()), 0.0, q] for q in data)
+    rows = ([str(uuid.uuid4()), 0.0, q, 'default'] for q in data)
 
   yield headers, rows
 
+
+def _get_table_name(path):
+  column = None
+
+  if path.count('.') == 1:
+    database, table = path.split('.', 1)
+  elif path.count('.') == 2:
+    database, table, column = path.split('.', 2)
+  else:
+    database, table = 'default', path
+
+  name = {'database': database, 'table': table}
+  if column:
+    name['column'] = column
+  return name

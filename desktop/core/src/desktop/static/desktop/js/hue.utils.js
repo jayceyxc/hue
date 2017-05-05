@@ -108,6 +108,13 @@ if (!String.prototype.includes) {
   };
 }
 
+if (!('addRule' in CSSStyleSheet.prototype)) {
+  CSSStyleSheet.prototype.addRule = function (selector, rule, idx) {
+    return this.insertRule(selector + "{" + rule + "}", idx || 0);
+  }
+}
+
+
 /*
  * Add utility methods to the HUE object
 */
@@ -189,6 +196,9 @@ if (!String.prototype.includes) {
   }
 
   hueUtils.changeURL = function (newURL) {
+    if (window.location.hash !== '' && newURL.indexOf('#') === -1){
+      newURL = newURL + window.location.hash;
+    }
     window.history.pushState(null, null, newURL);
   }
 
@@ -211,6 +221,10 @@ if (!String.prototype.includes) {
     }
     else {
       newSearch = window.location.search + (value ? (window.location.search.indexOf('?') > -1 ? '&' : '?') + param + '=' + value : '' );
+    }
+
+    if (newSearch === '?') {
+      newSearch = '';
     }
 
     hueUtils.changeURL(window.location.pathname + newSearch);
@@ -254,13 +268,50 @@ if (!String.prototype.includes) {
    * @constructor
    */
   hueUtils.waitForRendered = function (selector, condition, callback, timeout) {
-    var $el = $(selector);
+    var $el = selector instanceof jQuery ? selector: $(selector);
     if (condition($el)) {
       callback($el);
     }
     else {
       window.setTimeout(function () {
         hueUtils.waitForRendered(selector, condition, callback);
+      }, timeout || 100)
+    }
+  }
+
+  /**
+   * @param {Function} observable
+   * @param {Function} callback
+   * @param {number} [timeout]
+   * @constructor
+   */
+  hueUtils.waitForObservable = function (observable, callback, timeout) {
+    if (observable()) {
+      callback(observable);
+    }
+    else {
+      var subscription = observable.subscribe(function(newValue) {
+        if (newValue) {
+          subscription.dispose();
+          callback(observable);
+        }
+      });
+    }
+  }
+
+  /**
+   * @param {Function} variable
+   * @param {Function} callback
+   * @param {number} [timeout]
+   * @constructor
+   */
+  hueUtils.waitForVariable = function (variable, callback, timeout) {
+    if (variable) {
+      callback(variable);
+    }
+    else {
+      window.setTimeout(function () {
+        hueUtils.waitForVariable(variable, callback);
       }, timeout || 100)
     }
   }
@@ -287,6 +338,32 @@ if (!String.prototype.includes) {
     return results === null ? "" : decodeURIComponent(results[1].replace(/\+/g, " "));
   }
 
+  hueUtils.logError = function (error) {
+    if (typeof window.console !== 'undefined' && typeof window.console.error !== 'undefined') {
+      if (typeof error !== 'undefined') {
+        console.error(error);
+      }
+      console.error(new Error().stack);
+    }
+  };
+
+  hueUtils.initNiceScroll = function ($el, options) {
+    var defaults = {
+      cursorcolor: "#7D7D7D",
+      cursorborder: "1px solid #7D7D7D",
+      cursoropacitymin: 0,
+      cursoropacitymax: navigator.platform.indexOf('Win') > -1 ? 1: 0.7,
+      mousescrollstep: 60,
+      cursorwidth: "6px",
+      railpadding: { top: 1, right: 1, left: 1, bottom: 1 },
+      hidecursordelay: 0,
+      scrollspeed: 1,
+      cursorminheight: 20,
+      horizrailenabled: true,
+      autohidemode: "leave"
+    }
+    return $el.niceScroll($.extend(defaults, options || {}));
+  };
 
 }(hueUtils = window.hueUtils || {}));
 
@@ -349,12 +426,16 @@ var huePubSub = (function () {
   var hOP = topics.hasOwnProperty;
 
   return {
-    subscribe: function (topic, listener) {
+    subscribe: function (topic, listener, app) {
       if (!hOP.call(topics, topic)) {
         topics[topic] = [];
       }
 
-      var index = topics[topic].push(listener) - 1;
+      var index = topics[topic].push({
+        listener: listener,
+        app: app,
+        status: 'running'
+      }) - 1;
 
       return {
         remove: function () {
@@ -362,11 +443,11 @@ var huePubSub = (function () {
         }
       };
     },
-    subscribeOnce: function (topic, listener) {
+    subscribeOnce: function (topic, listener, app) {
       var ephemeral = this.subscribe(topic, function () {
-        listener.apply(arguments);
+        listener.apply(listener, arguments);
         ephemeral.remove();
-      });
+      }, app);
 
     },
     publish: function (topic, info) {
@@ -375,11 +456,42 @@ var huePubSub = (function () {
       }
 
       topics[topic].forEach(function (item) {
-        item(info);
+        if (item.status === 'running') {
+          item.listener(info);
+        }
       });
     },
     getTopics: function () {
       return topics;
+    },
+    pauseAppSubscribers: function (app) {
+      if (app) {
+        Object.keys(topics).forEach(function (topicName) {
+          topics[topicName].forEach(function (topic) {
+            if (topic.app === app) {
+              topic.status = 'paused';
+            }
+          });
+        });
+      }
+    },
+    resumeAppSubscribers: function (app) {
+      if (app) {
+        Object.keys(topics).forEach(function (topicName) {
+          topics[topicName].forEach(function (topic) {
+            if (topic.app === app) {
+              topic.status = 'running';
+            }
+          });
+        });
+      }
+    },
+    clearAppSubscribers: function (app) {
+      if (app) {
+        Object.keys(topics).forEach(function (topicName) {
+          topics[topicName] = topics[topicName].filter(function(obj){ return obj.app !== app});
+        });
+      }
     }
   };
 })();
@@ -506,11 +618,21 @@ var hueDebugTimer = (function () {
   };
 })();
 
+var hueAnalytics = (function () {
+  return {
+    log: function (app, page) {
+      if (typeof trackOnGA == 'function') {
+        trackOnGA(app + '/' + page);
+      }
+    }
+  };
+})();
 
 Number.prototype.toHHMMSS = function (skipZeroSeconds) {
   var n = this;
   var millis = n % 1000;
   n = (n - millis) / 1000;
+  millis = +(millis/10).toFixed();
   var seconds = n % 60;
   n = (n - seconds) / 60;
   var minutes = n % 60;

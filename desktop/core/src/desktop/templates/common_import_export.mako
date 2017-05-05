@@ -29,13 +29,13 @@ from django.utils.translation import ugettext as _
 
 <div id="import-documents" class="modal hide fade fileupload-modal">
   <div class="modal-header">
-    <a href="#" class="close" data-dismiss="modal" data-clear="fileupload">&times;</a>
-    <h3>${_('Import Hue documents')}</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${_('Import Hue documents')}</h2>
   </div>
   <div class="modal-body form-inline">
     <div class="pull-right">
       <input type="button" class="btn" data-dismiss="modal" data-clear="fileupload" value="${ _('Cancel') }" />
-      <a class="btn btn-danger" data-bind="click: import_document"> ${ _('Import') } </a>
+      <a class="btn btn-danger" data-bind="click: importDocument"> ${ _('Import') } </a>
     </div>
     <div class="fileupload fileupload-new" data-provides="fileupload">
       <span class="btn btn-file" style="line-height: 29px">
@@ -43,8 +43,8 @@ from django.utils.translation import ugettext as _
         <span class="fileupload-exists">${ _('Change') }</span>
         <input type="file" accept=".json" id="fileData"/>
       </span>
-      &nbsp;&nbsp;<span class="fileupload-preview"></span>
-        <a href="#" class="fileupload-exists" data-clear="fileupload"><i class="fa fa-times"></i></a>
+    &nbsp;&nbsp;<span class="fileupload-preview"></span>
+      <a href="#" class="fileupload-exists" data-clear="fileupload"><i class="fa fa-times"></i></a>
     </div>
     ${ csrf_token(request) | n,unicode }
     <input type="hidden" name="redirect" value="${ request.get_full_path() }"/>
@@ -52,22 +52,27 @@ from django.utils.translation import ugettext as _
 </div>
 
 <div id="import-document-data" class="modal hide fade">
+  <div class="modal-header">
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${_('Import Hue documents')}</h2>
+  </div>
   <div class="modal-body">
-    <div class="center animated" style="display: none;" data-bind="visible: importedDocumentCount() == 0">
+    <div class="center" style="display: none;" data-bind="visible: importedDocumentCount() == 0">
       <i class="fa fa-spinner fa-spin fa-2x"></i>
     </div>
     <!-- ko if: importedDocumentCount() > 0 -->
-      <h3> ${_('Document Summary')} </h3>
       <ul>
         <li> ${_('Imported: ')} <span data-bind="text: importedDocSummary()['count']"></span></li>
         <li> ${_('Created: ')} <span data-bind="text: importedDocSummary()['created_count']"></span></li>
         <li> ${_('Updated: ')} <span data-bind="text: importedDocSummary()['updated_count']"></span></li>
       </ul>
 
-      ${_('Show Details')}
-      <button id="show-details-caret" class="btn toolbarBtn" data-bind="click: $root.toggleShowTable"><span class="caret"></span></button>
+      <!-- ko ifnot: $root.showTable() -->
+      <a href="javascript:void(0)" class="margin-left-10 margin-top-10" data-bind="click: $root.toggleShowTable">${_('Show Details')} <i class="fa fa-caret-down"></i></a>
+      <!-- /ko -->
       <!-- ko if: $root.showTable() -->
-        <table class="table table-striped table-condensed">
+        <a href="javascript:void(0)" class="margin-left-10 margin-top-10" data-bind="click: $root.toggleShowTable">${_('Hide Details')} <i class="fa fa-caret-up"></i></a>
+        <table class="table table-condensed">
           <thead>
             <tr>
               <th>${_('Name')}</th>
@@ -87,7 +92,7 @@ from django.utils.translation import ugettext as _
     <!-- /ko -->
   </div>
   <div class="modal-footer">
-    <input id="import-document-data-close" data-dismiss="modal" type="button" class="btn" value="${ _('Close') }" data-bind="click: refreshPage"/>
+    <input data-dismiss="modal" type="button" class="btn" value="${ _('Close') }" />
   </div>
 </div>
 
@@ -106,18 +111,22 @@ from django.utils.translation import ugettext as _
   });
 </script>
 
-<script type="text/javascript" charset="utf-8">
-  var ImportDocument = function () {
+<script type="text/javascript">
+  var ImportDocumentModel = function () {
     var self = this;
     self.fileData = new FormData();
     self.importedDocSummary = ko.observable();
     self.showTable = ko.observable();
 
-    self.import_document = function() {
+    self.importDocument = function() {
       self.importedDocSummary(null);
       self.showTable(false);
       $('#import-documents').modal('hide');
       $('#import-document-data').modal('show');
+      $('#import-document-data').on('hide', function(){
+        huePubSub.publish('import.documents.done');
+        window.location.reload();
+      });
 
       self.fileData = new FormData();
       self.fileData.append("documents", $('#fileData')[0].files[0]);
@@ -134,6 +143,10 @@ from django.utils.translation import ugettext as _
             $(document).trigger('error', data.message);
           }
         },
+        error: function () {
+          $(document).trigger('error', "${_('An unexpected error occurred while importing your documents')}");
+          $('#import-document-data').modal('hide');
+        }
       });
     };
 
@@ -147,21 +160,10 @@ from django.utils.translation import ugettext as _
     self.toggleShowTable = function() {
       self.showTable(!self.showTable());
     };
-
-    self.refreshPage = function() {
-      window.location.reload();
-    };
-
-    $('#import-document-data-close').keyup(function(e) {
-      if (e.keyCode == 27) {
-        self.refreshPage();
-      }
-    });
   }
 
-  var importDocumentModel;
   $(document).ready(function () {
-    importDocumentModel = new ImportDocument();
+    var importDocumentModel = new ImportDocumentModel();
     ko.applyBindings(importDocumentModel, $("#import-documents")[0]);
     ko.applyBindings(importDocumentModel, $("#import-document-data")[0]);
   });

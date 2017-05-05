@@ -27,6 +27,7 @@ import shutil
 import stat as stat_module
 import urllib
 
+from bz2 import decompress
 from datetime import datetime
 from cStringIO import StringIO
 from gzip import GzipFile
@@ -54,6 +55,7 @@ from desktop.lib.django_util import JsonResponse
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.fs import splitpath
 from desktop.lib.i18n import smart_str
+from desktop.lib.tasks.compress_files.compress_utils import compress_files_in_hdfs
 from desktop.lib.tasks.extract_archive.extract_utils import extract_archive_in_hdfs
 from hadoop.fs.hadoopfs import Hdfs
 from hadoop.fs.exceptions import WebHdfsException
@@ -68,7 +70,7 @@ from filebrowser.lib.rwx import filetype, rwx
 from filebrowser.lib import xxd
 from filebrowser.forms import RenameForm, UploadFileForm, UploadArchiveForm, MkDirForm, EditorForm, TouchForm,\
                               RenameFormSet, RmTreeFormSet, ChmodFormSet, ChownFormSet, CopyFormSet, RestoreFormSet,\
-                              TrashPurgeForm
+                              TrashPurgeForm, SetReplicationFactorForm
 
 
 DEFAULT_CHUNK_SIZE_BYTES = 1024 * 4 # 4KB
@@ -159,6 +161,13 @@ def download(request, path):
     response["Last-Modified"] = http_date(stats['mtime'])
     response["Content-Length"] = stats['size']
     response['Content-Disposition'] = request.GET.get('disposition', 'attachment') if _can_inline_display(path) else 'attachment'
+
+    request.audit = {
+        'operation': 'DOWNLOAD',
+        'operationText': 'User %s downloaded file %s with size: %d bytes' % (request.user.username, path, stats['size']),
+        'allowed': True
+    }
+
     return response
 
 
@@ -527,10 +536,11 @@ def stat(request, path):
 def content_summary(request, path):
     if not request.fs.exists(path):
         raise Http404(_("File not found: %(path)s") % {'path': escape(path)})
-
     response = {'status': -1, 'message': '', 'summary': None}
     try:
         stats = request.fs.get_content_summary(path)
+        replication_factor = request.fs.stats(path)['replication']
+        stats.summary.update({'replication': replication_factor})
         response['status'] = 0
         response['summary'] = stats.summary
     except WebHdfsException, e:
@@ -685,6 +695,8 @@ def read_contents(codec_type, path, fs, offset, length):
             if path.endswith('.gz') and detect_gzip(contents):
                 codec_type = 'gzip'
                 offset = 0
+            elif (path.endswith('.bz2') or path.endswith('.bzip2')) and detect_bz2(contents):
+                codec_type = 'bz2'
             elif path.endswith('.avro') and detect_avro(contents):
                 codec_type = 'avro'
             elif detect_parquet(fhandle):
@@ -700,6 +712,8 @@ def read_contents(codec_type, path, fs, offset, length):
 
         if codec_type == 'gzip':
             contents = _read_gzip(fhandle, path, offset, length, stats)
+        elif codec_type == 'bz2':
+            contents = _read_bz2(fhandle, path, offset, length, stats)
         elif codec_type == 'avro':
             contents = _read_avro(fhandle, path, offset, length, stats)
         elif codec_type == 'parquet':
@@ -788,6 +802,16 @@ def _read_gzip(fhandle, path, offset, length, stats):
     return contents
 
 
+def _read_bz2(fhandle, path, offset, length, stats):
+    contents = ''
+    try:
+        contents = decompress(fhandle.read(length))
+    except Exception, e:
+        logging.exception('Could not decompress file at "%s": %s' % (path, e))
+        raise PopupException(_("Failed to decompress file."))
+    return contents
+
+
 def _read_simple(fhandle, path, offset, length, stats):
     contents = ''
     try:
@@ -802,6 +826,11 @@ def _read_simple(fhandle, path, offset, length, stats):
 def detect_gzip(contents):
     '''This is a silly small function which checks to see if the file is Gzip'''
     return contents[:2] == '\x1f\x8b'
+
+
+def detect_bz2(contents):
+    '''This is a silly small function which checks to see if the file is Bz2'''
+    return contents[:3] == 'BZh'
 
 
 def detect_avro(contents):
@@ -1053,6 +1082,14 @@ def rename(request):
 
     return generic_op(RenameForm, request, smart_rename, ["src_path", "dest_path"], None)
 
+def set_replication(request):
+    def smart_set_replication(src_path, replication_factor):
+        result = request.fs.set_replication(src_path, replication_factor)
+        if not result:
+            raise PopupException(_("Setting of replication factor failed"))
+
+    return generic_op(SetReplicationFactorForm, request, smart_set_replication, ["src_path", "replication_factor"], None)
+
 
 def mkdir(request):
     def smart_mkdir(path, name):
@@ -1226,9 +1263,9 @@ def _upload_file(request):
             except Exception:
               pass
             if already_exists:
-                msg = _('Destination %(name)s already exists.')  % {'name': dest}
+                msg = _('Destination %(name)s already exists.')  % {'name': filepath}
             else:
-                msg = _('Copy to %(name)s failed: %(error)s') % {'name': dest, 'error': ex}
+                msg = _('Copy to %(name)s failed: %(error)s') % {'name': filepath, 'error': ex}
             raise PopupException(msg)
 
         response.update({
@@ -1346,7 +1383,30 @@ def extract_archive_using_batch_job(request):
       try:
         response = extract_archive_in_hdfs(request, upload_path, archive_name)
       except Exception, e:
-        response['message'] = _('Exception occurred while extracting the archive: %s' % e)
+        response['message'] = _('Exception occurred while extracting archive: %s' % e)
+  else:
+    response['message'] = _('ERROR: Configuration parameter enable_extract_uploaded_archive ' +
+                            'has to be enabled before calling this method.')
+
+  return JsonResponse(response)
+
+
+@require_http_methods(["POST"])
+def compress_files_using_batch_job(request):
+
+  response = {'status': -1, 'data': ''}
+  if ENABLE_EXTRACT_UPLOADED_ARCHIVE.get():
+    upload_path = request.POST.get('upload_path', None)
+    archive_name = request.POST.get('archive_name', None)
+    file_names = request.POST.getlist('files[]')
+
+    if upload_path and file_names and archive_name:
+      try:
+        response = compress_files_in_hdfs(request, file_names, upload_path, archive_name)
+      except Exception, e:
+        response['message'] = _('Exception occurred while compressing files: %s' % e)
+    else:
+      response['message'] = _('Error: Output directory is not set.');
   else:
     response['message'] = _('ERROR: Configuration parameter enable_extract_uploaded_archive ' +
                             'has to be enabled before calling this method.')

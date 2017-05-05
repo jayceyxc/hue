@@ -15,10 +15,12 @@
 ## limitations under the License.
 
 <%!
-  from desktop import conf
-  from desktop.views import commonheader, commonfooter, commonshare, commonimportexport
   from django.utils.translation import ugettext as _
-  from desktop.views import _ko
+
+  from desktop import conf
+  from desktop.views import commonheader, commonfooter, commonshare, commonimportexport, _ko
+
+  from indexer.conf import ENABLE_NEW_INDEXER
 %>
 
 <%namespace name="actionbar" file="actionbar.mako" />
@@ -27,7 +29,8 @@
 %if not is_embeddable:
 ${ commonheader(_("Importer"), "indexer", user, request, "60px") | n,unicode }
 
-# Todo lot of those
+## TODO lot of those re-imported
+<script src="${ static('desktop/js/autocomplete/sqlParseSupport.js') }"></script>
 <script src="${ static('desktop/js/autocomplete/sql.js') }"></script>
 <script src="${ static('desktop/js/sqlAutocompleter.js') }"></script>
 <script src="${ static('desktop/js/sqlAutocompleter2.js') }"></script>
@@ -38,10 +41,7 @@ ${ commonheader(_("Importer"), "indexer", user, request, "60px") | n,unicode }
 
 <script src="${ static('desktop/js/jquery.hiveautocomplete.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/jquery/plugins/jquery-ui-1.10.4.custom.min.js') }"></script>
-<script src="${ static('desktop/js/jquery.huedatatable.js') }"></script>
-<script src="${ static('desktop/ext/js/d3.v3.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/selectize.min.js') }"></script>
-<script src="${ static('desktop/js/apiHelper.js') }"></script>
 <script src="${ static('metastore/js/metastore.ko.js') }"></script>
 <script src="${ static('desktop/js/ko.charts.js') }"></script>
 <script src="${ static('desktop/ext/js/knockout-sortable.min.js') }"></script>
@@ -76,15 +76,42 @@ ${ assist.assistPanel() }
     border-right: none!important;
   }
 
+  .step .card-heading.simple {
+    font-size: 17px;
+  }
+
+  .step .card-body {
+    margin-top: 14px;
+  }
+
   .step label > div:first-child {
     width: 120px;
     text-align: right;
     padding-right: 8px;
     display: inline-block;
+    vertical-align: top;
+    padding-top: 6px;
   }
 
   .step label.checkbox {
     margin-left: 130px;
+  }
+
+  .step .index-field label.checkbox {
+    margin-left: 5px;
+  }
+
+  .step .index-field label > div:first-child {
+    width: initial;
+  }
+
+  .step .field-properties label.checkbox {
+    margin-left: 10px;
+  }
+
+  .step label:not(.checkbox) {
+    display: inline-block;
+    vertical-align: middle;
   }
 
   .step input[type='text'] {
@@ -99,6 +126,46 @@ ${ assist.assistPanel() }
 
   .step .form-inline .selectize-control {
     width: 120px !important;
+    margin-bottom: -8px;
+  }
+
+  .step .inline-labels {
+    display: table;
+  }
+
+  .step .inline-labels .selectize-control {
+    width: 120px !important;
+    vertical-align: -12px;
+  }
+
+  .step .selectize-input {
+    max-height: 31px;
+  }
+
+  .step .selectize-control.multi .selectize-input {
+    padding-top: 3px!important;
+  }
+
+  .step .show-edit-on-hover a {
+    opacity: 0;
+    -webkit-transition: opacity 0.2s linear;
+    -moz-transition: opacity 0.2s linear;
+    -ms-transition: opacity 0.2s linear;
+    -o-transition: opacity 0.2s linear;
+    transition: opacity 0.2s linear;
+  }
+
+  .step .show-edit-on-hover:hover a {
+    opacity: 1;
+  }
+
+  .step .show-edit-on-hover .inactive-action {
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+
+  .step .fa-padding-top {
+    padding-top: 8px;
   }
 
   .kudu-partitions li {
@@ -155,8 +222,9 @@ ${ assist.assistPanel() }
     overflow-x: hidden;
   }
 
-  .fileChooserBtn {
-    height: 29px;
+  .content-panel-inner {
+    margin: 10px;
+    margin-bottom: 100px;
   }
 
   .form-control.path {
@@ -168,22 +236,36 @@ ${ assist.assistPanel() }
     bottom: 0;
     margin: 0;
     z-index: 1000;
+    border-top: 1px solid #e5e5e5;
   }
 
   #importerNotebook {
     height: 5px;
-    margin-top: 10px;
+    float: right;
+  }
+
+  #importerNotebook .snippet-error-container  {
+    background: transparent;
+  }
+
+  .inline-table {
+    display: inline-table;
+  }
+
+  .columns-form {
+    margin-bottom: 200px;
   }
 
 </style>
 
-<span id="importerComponents" class="notebook">
-<div class="navbar navbar-inverse navbar-fixed-top">
+<span id="importerComponents" class="notebook" data-bind="dropzone: { url: '/filebrowser/upload/file?dest=' + DropzoneGlobals.homeDir, params: {dest: DropzoneGlobals.homeDir}, paramName: 'hdfs_file', onComplete: function(path){ createWizard.source.path(path); } }">
+<div class="dz-message" data-dz-message></div>
+<div class="navbar hue-title-bar">
   <div class="navbar-inner">
     <div class="container-fluid">
       <div class="nav-collapse">
         <ul class="nav">
-          <li class="currentApp">
+          <li class="app-header">
             <a href="${ url('indexer:importer') }">
               <i class="fa fa-database app-icon"></i> ${_('Importer')}</a>
             </a>
@@ -215,10 +297,6 @@ ${ assist.assistPanel() }
                 user: '${user.username}',
                 onlySql: false,
                 sql: {
-                  sourceTypes: [{
-                    name: 'hive',
-                    type: 'hive'
-                  }],
                   navigationSettings: {
                     openItem: false,
                     showStats: true
@@ -231,7 +309,7 @@ ${ assist.assistPanel() }
         <div class="resizer" data-bind="visible: $root.isLeftPanelVisible() && $root.assistAvailable(), splitDraggable : { appName: 'notebook', leftPanelVisible: $root.isLeftPanelVisible }"><div class="resize-bar">&nbsp;</div></div>
         %endif
         <div class="content-panel">
-          <div style="margin: 10px; margin-bottom: 100px">
+          <div class="content-panel-inner">
           <!-- ko template: 'create-index-wizard' --><!-- /ko -->
           </div>
         </div>
@@ -242,8 +320,8 @@ ${ assist.assistPanel() }
 
 <div id="chooseFile" class="modal hide fade">
   <div class="modal-header">
-    <a href="#" class="close" data-dismiss="modal">&times;</a>
-    <h3>${_('Choose a file')}</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${_('Choose a file')}</h2>
   </div>
   <div class="modal-body">
     <div id="filechooser"></div>
@@ -253,67 +331,93 @@ ${ assist.assistPanel() }
 
 <script type="text/html" id="create-index-wizard">
   <div data-bind="visible: createWizard.show">
-
-    <ol class="list-inline text-center step-indicator">
-      <li data-bind="css: { 'active': currentStep() == 1, 'complete': currentStep() > 1 }, click: function() { currentStep(1) }">
-        <div class="step" title="${ _('Go to Step 1') }">
-          <!-- ko if: currentStep() == 1 -->
-            <!-- ko if: createWizard.isGuessingFormat -->
-              <span class="fa fa-spinner fa-spin"></span>
+    <div class="step-indicator-fixed">
+      <ol class="list-inline text-center step-indicator">
+        <li data-bind="css: { 'active': currentStep() == 1, 'complete': currentStep() > 1, 'pointer': currentStep() > 1 }, click: function() { currentStep(1) }">
+          <div class="step" title="${ _('Go to Step 1') }">
+            <!-- ko if: currentStep() == 1 -->
+              <!-- ko if: createWizard.isGuessingFormat -->
+                <span class="fa fa-spinner fa-spin"></span>
+              <!-- /ko -->
+              <!-- ko ifnot: createWizard.isGuessingFormat -->
+                1
+              <!-- /ko -->
             <!-- /ko -->
-            <!-- ko ifnot: createWizard.isGuessingFormat -->
-              1
+            <!-- ko ifnot: currentStep() == 1 -->
+            <span class="fa fa-check"></span>
             <!-- /ko -->
+          </div>
+          <div class="caption">
+            <!-- ko if: createWizard.source.inputFormat() != 'manual' -->
+            ${ _('Pick data from ') }<span data-bind="text: createWizard.source.inputFormat"></span> <span data-bind="text: createWizard.source.path"></span>
+            <!-- /ko -->
+            <!-- ko if: createWizard.source.inputFormat() == 'manual' -->
+            ${ _('No source data') }
           <!-- /ko -->
-          <!-- ko ifnot: currentStep() == 1 -->
-          <span class="fa fa-check"></span>
-          <!-- /ko -->
-        </div>
-        <div class="caption">${ _('Pick data from ') }<span data-bind="text: createWizard.source.inputFormat"></span></div>
-      </li>
+          </div>
+        </li>
 
-      <li data-bind="css: { 'inactive': currentStep() == 1, 'active': currentStep() == 2, 'complete': currentStep() == 3 }, click: function() { currentStep(2) }">
-        <div class="step" title="${ _('Go to Step 2') }">
-          <!-- ko if: currentStep() < 3 -->
-            <!-- ko if: createWizard.isGuessingFieldTypes -->
-              <span class="fa fa-spinner fa-spin"></span>
+        <li data-bind="css: { 'inactive': currentStep() == 1, 'active': currentStep() == 2, 'complete': currentStep() == 3, 'pointer': currentStep() == 1 && !createWizard.isGuessingFormat() && createWizard.source.show() }, click: function() { if (!createWizard.isGuessingFormat() && createWizard.source.show()){ currentStep(2); }}">
+          <div class="step" title="${ _('Go to Step 2') }">
+            <!-- ko if: currentStep() < 3 -->
+              <!-- ko if: createWizard.isGuessingFieldTypes -->
+                <span class="fa fa-spinner fa-spin"></span>
+              <!-- /ko -->
+              <!-- ko ifnot: createWizard.isGuessingFieldTypes -->
+                2
+              <!-- /ko -->
             <!-- /ko -->
-            <!-- ko ifnot: createWizard.isGuessingFieldTypes -->
-              2
+          </div>
+          <div class="caption">
+            <!-- ko if: createWizard.source.inputFormat() != 'manual' -->
+              ${ _('Move it to ') }
             <!-- /ko -->
-          <!-- /ko -->
-        </div>
-        <div class="caption">${ _('Move it to ') }<span data-bind="text: createWizard.destination.outputFormat"></span></div>
-      </li>
-    </ol>
+            <!-- ko if: createWizard.source.inputFormat() == 'manual' -->
+              ${ _('Create') }
+            <!-- /ko -->
+            <span data-bind="text: createWizard.destination.outputFormat"></span> <span data-bind="text: createWizard.destination.name"></span>
+          </div>
+        </li>
+      </ol>
+    </div>
 
+    <div class="vertical-spacer"></div>
 
     <!-- ko if: currentStep() == 1 -->
     <div class="card step">
       <h3 class="card-heading simple">${_('Source')}</h3>
       <div class="card-body">
         <div>
-          <div class="control-group" data-bind="visible: ! createWizard.prefill.target_type">
+          <div class="control-group" data-bind="visible: createWizard.prefill.target_type().length == 0 || createWizard.prefill.source_type() == 'all'">
             <label for="sourceType" class="control-label"><div>${ _('Type') }</div>
               <select id="sourceType" data-bind="selectize: createWizard.source.inputFormats, value: createWizard.source.inputFormat, optionsText: 'name', optionsValue: 'value'"></select>
             </label>
           </div>
 
-          <div class="control-group" data-bind="visible: createWizard.source.inputFormat() == 'file'">
+          <div class="control-group" data-bind="visible: createWizard.prefill.target_type() == 'database'">
+            <label for="sourceType" class="control-label">${ _('No source is needed for creating a database.') }</label>
+          </div>
+
+          <div class="control-group input-append" data-bind="visible: createWizard.source.inputFormat() == 'file'">
             <label for="path" class="control-label"><div>${ _('Path') }</div>
-              <input type="text" class="form-control path input-xxlarge" data-bind="value: createWizard.source.path, filechooser: createWizard.source.path, filechooserOptions: { linkMarkup: true, skipInitialPathIfEmpty: true, openOnFocus: true }" placeholder="${ _('Click or drag & drop') }">
+              <input type="text" class="form-control path input-xxlarge" data-bind="value: createWizard.source.path, filechooser: createWizard.source.path, filechooserOptions: { linkMarkup: true, skipInitialPathIfEmpty: true, openOnFocus: true, selectFolder: false }" placeholder="${ _('Click or drag from the assist') }">
             </label>
+            <!-- ko if: createWizard.source.path().length > 0 -->
+              <a data-bind="attr: {href: '/filebrowser/view=' + createWizard.source.path() }" target="_blank" title="${ _('Open') }">
+                <i class="fa fa-external-link-square"></i>
+              </a>
+            <!-- /ko -->
           </div>
 
           <div class="control-group" data-bind="visible: createWizard.source.inputFormat() == 'table'">
             <label for="path" class="control-label"><div>${ _('Table') }</div>
-              <input type="text" data-bind="value: createWizard.source.table, hivechooser: createWizard.source.table, skipColumns: true" placeholder="${ _('Table name or <database>.<table>') }">
+              <input type="text" class="input-xlarge" data-bind="value: createWizard.source.table, hivechooser: createWizard.source.table, skipColumns: true, apiHelperUser: '${ user }', apiHelperType: createWizard.source.apiHelperType, mainScrollable: $('.content-panel')" placeholder="${ _('Table name or <database>.<table>') }">
             </label>
           </div>
 
           <div class="control-group" data-bind="visible: createWizard.source.inputFormat() == 'query'">
             <label for="path" class="control-label"><div>${ _('Query') }</div>
-              <select data-bind="selectize: createWizard.source.queries, value: createWizard.source.query, optionsText: 'name', optionsAfterRender: createWizard.source.selectQuery"></select>
+              <select placeholder="${ _('Search your documents...') }" data-bind="documentChooser: { dependentValue: createWizard.source.draggedQuery, mappedDocument: createWizard.source.query }"></select>
             </label>
           </div>
         </div>
@@ -328,9 +432,14 @@ ${ assist.assistPanel() }
       <!-- ko ifnot: createWizard.isGuessingFormat -->
       <h3 class="card-heading simple">${_('Format')}</h3>
       <div class="card-body">
-        <label data-bind="visible: ! createWizard.prefill.source_type"><div>${_('File Type')}</div> <select data-bind="selectize: $root.createWizard.fileTypes, value: $root.createWizard.fileTypeName, optionsText: 'description', optionsValue: 'name'"></select></label>
-        <span data-bind="with: createWizard.source.format, visible: createWizard.source.show">
-          <!-- ko template: {name: 'format-settings'} --> <!-- /ko -->
+        <label data-bind="visible: createWizard.prefill.source_type().length == 0 && createWizard.source.inputFormat() != 'table'">
+          <div>${_('File Type')}</div>
+          <select data-bind="selectize: $root.createWizard.fileTypes, value: $root.createWizard.fileTypeName, optionsText: 'description', optionsValue: 'name'"></select>
+        </label>
+        <span class="inline-labels" data-bind="with: createWizard.source.format, visible: createWizard.source.show">
+          <span data-bind="foreach: getArguments()">
+            <!-- ko template: {name: 'arg-' + $data.type, data: {description: $data.description, value: $parent[$data.name]}}--><!-- /ko -->
+          </span>
         </span>
       </div>
       <!-- /ko -->
@@ -345,7 +454,7 @@ ${ assist.assistPanel() }
       <h3 class="card-heading simple">${_('Preview')}</h3>
       <div class="card-body">
         <div style="overflow: auto">
-          <table class="table table-striped table-condensed table-preview">
+          <table class="table table-condensed table-preview">
             <thead>
             <tr data-bind="foreach: createWizard.source.sampleCols">
               ##<!-- ko template: 'field-preview-header-template' --><!-- /ko -->
@@ -383,27 +492,31 @@ ${ assist.assistPanel() }
         <h3 class="card-heading simple">${_('Destination')}</h3>
         <div class="card-body">
           <div class="control-group">
-            <label for="destinationType" class="control-label" data-bind="visible: ! $parent.createWizard.prefill.target_type"><div>${ _('Type') }</div>
+            <label for="destinationType" class="control-label" data-bind="visible: $parent.createWizard.prefill.target_type().length == 0"><div>${ _('Type') }</div>
               <select id="destinationType" data-bind="selectize: outputFormats, value: outputFormat, optionsValue: 'value', optionsText: 'name'"></select>
             </label>
+          </div>
+          <div class="control-group">
+            <label for="collectionName" class="control-label "><div>${ _('Name') }</div></label>
+            <!-- ko if: outputFormat() != 'table' && outputFormat() != 'database' -->
+              <input type="text" class="form-control input-xlarge" id="collectionName" data-bind="value: name, valueUpdate: 'afterkeydown'" placeholder="${ _('Name') }">
+            <!-- /ko -->
 
-            <label for="collectionName" class="control-label"><div>${ _('Name') }</div>
-              <!-- ko if: outputFormat() != 'table' && outputFormat() != 'database' -->
-                <input type="text" class="form-control input-xlarge" id="collectionName" data-bind="value: name, valueUpdate: 'afterkeydown'" placeholder="${ _('Name') }">
-              <!-- /ko -->
-
-              <!-- ko if: outputFormat() == 'table' || outputFormat() == 'database' -->
-                <input type="text" data-bind="value: name, hivechooser: name, skipColumns: true, valueUpdate: 'afterkeydown'" pattern="^[a-zA-Z0-9_]*$" title="${ _('Only alphanumeric and underscore characters') }" placeholder="${ _('Table name or <database>.<table>') }">
-              <!-- /ko -->
-
-              <span class="help-inline muted" data-bind="visible: ! isTargetExisting()">
-                ${ _('Create a new ') } <span data-bind="text: outputFormat"></span>
-              </span>
-              <span class="help-inline muted" data-bind="visible: isTargetExisting()">
+            <!-- ko if: outputFormat() == 'table' || outputFormat() == 'database' -->
+              <input type="text" data-bind="value: name, hivechooser: name, skipColumns: true, skipTables: outputFormat() == 'database', valueUpdate: 'afterkeydown', apiHelperUser: '${ user }', apiHelperType: apiHelperType, mainScrollable: $('.content-panel'), attr: { 'placeholder': outputFormat() == 'table' ? '${  _ko('Table name or <database>.<table>') }' : '${  _ko('Database name') }' }" pattern="^([a-zA-Z0-9_]+\.)?[a-zA-Z0-9_]*$" title="${ _('Only alphanumeric and underscore characters') }">
+            <!-- /ko -->
+            <span class="help-inline muted" data-bind="visible: !isTargetExisting() && isTargetChecking()">
+              <i class="fa fa-spinner fa-spin"></i>
+            </span>
+            <span class="help-inline muted" data-bind="visible: isTargetExisting()">
+              <!-- ko if: outputFormat() == 'index' -->
                 ${ _('Adding data to the existing ') } <span data-bind="text: outputFormat"></span>
-                <a href="javascript:void(0)" data-bind="attr: { href: existingTargetUrl() }, text: name" target="_blank"></a>
-              </span>
-            </label>
+              <!-- /ko -->
+              <!-- ko if: outputFormat() != 'index' -->
+              <i class="fa fa-warning" style="color: #c09853"></i> ${ _('Already existing') } <span data-bind="text: outputFormat"></span>
+              <!-- /ko -->
+              <a href="javascript:void(0)" data-bind="attr: { href: existingTargetUrl() }, text: name" target="_blank" title="${ _('Open it.') }"></a>
+            </span>
           </div>
         </div>
       </div>
@@ -420,81 +533,92 @@ ${ assist.assistPanel() }
             </div>
 
             <div class="control-group">
-              <label><div>${ _('Description') }</div>
-                <input type="text" class="form-control input-xlarge" data-bind="value: description, valueUpdate: 'afterkeydown'" placeholder="${ _('Description') }">
+              <label class="checkbox inline-block" data-bind="visible: tableFormat() != 'kudu'">
+                <input type="checkbox" data-bind="checked: useDefaultLocation"> ${_('Store in Default location')}
               </label>
             </div>
 
-            <label class="checkbox">
-              <input type="checkbox" data-bind="checked: useDefaultLocation"> ${_('Default location')}
-            </label>
-            <span data-bind="visible: ! useDefaultLocation()">
+            <div class="control-group" data-bind="visible: ! useDefaultLocation()">
               <label for="path" class="control-label"><div>${ _('External location') }</div>
                 <input type="text" class="form-control path input-xxlarge" data-bind="value: nonDefaultLocation, filechooser: nonDefaultLocation, filechooserOptions: { linkMarkup: true, skipInitialPathIfEmpty: true }, valueUpdate: 'afterkeydown'">
               </label>
-            </span>
+            </div>
 
-            <label class="checkbox">
-              <input type="checkbox" data-bind="checked: importData, disable: ! useDefaultLocation() && $parent.createWizard.source.path() == nonDefaultLocation();"> ${_('Import data')}
-            </label>
+            <div class="control-group">
+              <label class="control-label"><div>${ _('Extras') }</div>
+                <a href="javascript:void(0)" data-bind="css: {'inactive-action': !showProperties()}, click: function() {showProperties(!showProperties()) }" title="${ _('Show extra properties') }">
+                  <i class="fa fa-sliders fa-padding-top"></i>
+                </a>
+              </label>
+            </div>
 
-            <label class="checkbox" data-bind="visible: $root.createWizard.source.inputFormat() == 'file'">
-              <input type="checkbox" data-bind="checked: hasHeader"> ${_('Use first row has header')}
-            </label>
-
-            <label class="checkbox" data-bind="visible: tableFormat() == 'text'">
-              <input type="checkbox" data-bind="checked: useCustomDelimiters"> ${_('Custom char delimiters')}
-            </label>
-            <span data-bind="visible: useCustomDelimiters" data-bind="visible: tableFormat() == 'text'">
+            <span data-bind="visible: showProperties">
               <div class="control-group">
+                <label class="checkbox inline-block" data-bind="visible: $root.createWizard.source.inputFormat() != 'manual'">
+                  <input type="checkbox" data-bind="checked: importData, disable: ! useDefaultLocation() && $parent.createWizard.source.path() == nonDefaultLocation();"> ${_('Import data')}
+                </label>
+              </div>
+              <div class="control-group">
+                <label><div>${ _('Description') }</div>
+                   <input type="text" class="form-control input-xxlarge" data-bind="value: description, valueUpdate: 'afterkeydown'" placeholder="${ _('Description') }">
+                </label>
+              </div>
+              <div class="control-group" data-bind="visible: $root.createWizard.source.inputFormat() == 'file'">
+                <label class="checkbox inline-block">
+                  <input type="checkbox" data-bind="checked: hasHeader"> ${_('Use first row as header')}
+                </label>
+              </div>
+              <div class="control-group" data-bind="visible: tableFormat() == 'text'">
+                <label class="checkbox inline-block">
+                  <input type="checkbox" data-bind="checked: useCustomDelimiters"> ${_('Custom char delimiters')}
+                </label>
+              </div>
+              <span class="inline-labels" data-bind="visible: tableFormat() == 'text' && useCustomDelimiters()">
                 <label for="fieldDelimiter" class="control-label"><div>${ _('Field') }</div>
-                  <select id="fieldDelimiter" data-bind="selectize: $root.createWizard.customDelimiters, selectizeOptions: { create: true, maxLength: 2 }, value: customFieldDelimiter, optionsValue: 'value', optionsText: 'name'"></select>
+                  <select id="fieldDelimiter" data-bind="selectize: $root.createWizard.customDelimiters, selectizeOptions: { onOptionAdd: function(value){ $root.createWizard.customDelimiters.push({ 'value': value, 'name': value }) }, create: true, maxLength: 2 }, value: customFieldDelimiter, optionsValue: 'value', optionsText: 'name'"></select>
                 </label>
-              </div>
-              <div class="control-group">
                 <label for="collectionDelimiter" class="control-label"><div>${ _('Array, Map') }</div>
-                  <select id="collectionDelimiter" data-bind="selectize: $root.createWizard.customDelimiters, selectizeOptions: { create: true, maxLength: 2 }, value: customCollectionDelimiter, optionsValue: 'value', optionsText: 'name'"></select>
+                  <select id="collectionDelimiter" data-bind="selectize: $root.createWizard.customDelimiters, selectizeOptions: { onOptionAdd: function(value){ $root.createWizard.customDelimiters.push({ 'value': value, 'name': value }) }, create: true, maxLength: 2 }, value: customCollectionDelimiter, optionsValue: 'value', optionsText: 'name'"></select>
                 </label>
-              </div>
-              <div class="control-group">
                 <label for="structDelimiter" class="control-label"><div>${ _('Struct') }</div>
-                  <select id="structDelimiter" data-bind="selectize: $root.createWizard.customDelimiters, selectizeOptions: { create: true, maxLength: 2 }, value: customMapDelimiter, optionsValue: 'value', optionsText: 'name'"></select>
+                  <select id="structDelimiter" data-bind="selectize: $root.createWizard.customDelimiters, selectizeOptions: { onOptionAdd: function(value){ $root.createWizard.customDelimiters.push({ 'value': value, 'name': value }) }, create: true, maxLength: 2 }, value: customMapDelimiter, optionsValue: 'value', optionsText: 'name'"></select>
                 </label>
-              </div>
-              <div class="control-group">
-                <label for="customRegexp" class="control-label"><div>${ _('Regexp') }</div>
-                  <input id="customRegexp"  type="text" data-bind="value: customRegexp">
-                </label>
-              </div>
+              </span>
             </span>
+
+            <div class="control-group" data-bind="visible: tableFormat() == 'regexp'">
+              <label for="customRegexp" class="control-label"><div>${ _('Regexp') }</div>
+                <input id="customRegexp" class="input-xxlarge" type="text" data-bind="value: customRegexp" placeholder='([^]*) ([^]*) ([^]*) (-|\\[^\\]*\\]) ([^ \"]*|\"[^\"]*\") (-|[0-9]*) (-|[0-9]*)(?: ([^ \"]*|\".*\") ([^ \"]*|\".*\"))?'>
+              </label>
+            </div>
 
             <div class="control-group" data-bind="visible: tableFormat() == 'kudu'">
               <label for="kuduPks" class="control-label"><div>${ _('Primary keys') }</div>
                 ## At least one selected
-                <select id="kuduPks" data-bind="selectize: columns, selectedOptions: primaryKeys, optionsValue: 'name', optionsText: 'name'" size="3" multiple="true"></select>
+                <select id="kuduPks" data-bind="selectize: columns, selectedOptions: primaryKeys, selectedObjects: primaryKeyObjects, optionsValue: 'name', optionsText: 'name', innerSubscriber: 'name'" size="3" multiple="true"></select>
               </label>
             </div>
 
             <label class="control-label"><div>${ _('Partitions') }</div>
 
               <!-- ko if: tableFormat() != 'kudu' -->
-              <div style="display: inline-table">
+              <div class="inline-table">
                 <div class="form-inline" data-bind="foreach: partitionColumns">
                   <a class="pointer pull-right margin-top-20" data-bind="click: function() { $parent.partitionColumns.remove($data); }"><i class="fa fa-minus"></i></a>
                   <div data-bind="template: { name: 'table-field-template', data: $data }" class="margin-top-10 field inline-block"></div>
                   <div class="clearfix"></div>
                 </div>
-                <a data-bind="click: function() { partitionColumns.push($root.loadDefaultField({isPartition: true})); }" class="pointer" title="${_('Add Partition')}"><i class="fa fa-plus"></i> ${_('Add partition')}</a>
+                <a data-bind="click: function() { partitionColumns.push($root.loadDefaultField({isPartition: true})); }" class="pointer" title="${_('Add Partition')}"><i class="fa fa-plus fa-padding-top"></i> ${_('Add partition')}</a>
               </div>
               <!-- /ko -->
 
               <!-- ko if: tableFormat() == 'kudu' -->
-              <div class="form-inline" style="display: inline-table">
+              <div class="form-inline inline-table">
                 <ul class="unstyled kudu-partitions" data-bind="foreach: kuduPartitionColumns">
                   <li>
                   <a class="pointer pull-right" data-bind="click: function() { $parent.kuduPartitionColumns.remove($data); }"><i class="fa fa-minus"></i></a>
 
-                  <select id="kuduPks" data-bind="selectize: $parent.primaryKeys, selectedOptions: columns, selectizeOptions: { placeholder: '${ _ko('Columns...') }' }" size="3" multiple="true"></select>
+                  <select data-bind="selectize: $parent.primaryKeyObjects, selectedOptions: columns, optionsValue: 'name', optionsText: 'name', selectizeOptions: { placeholder: '${ _ko('Columns...') }' }" size="3" multiple="true"></select>
                   <select data-bind="selectize: ['RANGE BY', 'HASH'], value: name"></select>
 
                   <!-- ko if: name() == 'HASH' -->
@@ -516,10 +640,10 @@ ${ assist.assistPanel() }
                         <!-- ko if: name() == 'VALUE' -->
                           <select data-bind="selectize: ['VALUES', 'VALUE'], value: name"></select>
                           <div class="inline-block" data-bind="foreach: values" style="max-width: 370px">
-                            <input class="input-small" type="text" data-bind="value: $data" style="margin-bottom: 5px">
+                            <input class="input-small" type="text" data-bind="textInput: value" style="margin-bottom: 5px">
                             <a data-bind="click: function() { $parent.values.remove($data); }"><i class="fa fa-minus"></i></a>
                           </div>
-                          <a class="inline-block" data-bind="click: function() { values.push(''); }" title="${_('Add value')}"><i class="fa fa-plus"></i></a>
+                          <a class="inline-block" data-bind="click: function() { values.push(ko.mapping.fromJS({value: ''})); }" title="${_('Add value')}"><i class="fa fa-plus"></i></a>
                           <div class="clearfix"></div>
                         <!-- /ko -->
                       </div>
@@ -542,24 +666,46 @@ ${ assist.assistPanel() }
 
         <!-- ko if: outputFormat() == 'table' || outputFormat() == 'index' -->
           <div class="card step">
-            <h3 class="card-heading simple">${_('Fields')} <a class="inactive-action pointer" href="#fieldsBulkEditor" data-toggle="modal"><i class="fa fa-edit"></i></a></h3>
-            <div class="card-body">
-              <form class="form-inline" data-bind="foreach: columns">
-                <!-- ko if: $parent.outputFormat() == 'table' -->
-                  <div data-bind="template: { name: 'table-field-template', data: $data }" class="margin-top-10 field"></div>
-                  <!-- ko if: $root.createWizard.source.inputFormat() == 'manual' -->
-                    <a data-bind="click: function() { $parent.columns.remove($data); }"><i class="fa fa-minus"></i> </a>
+            <h3 class="card-heading simple show-edit-on-hover">${_('Fields')} <!-- ko if: $root.createWizard.isGuessingFieldTypes --><i class="fa fa-spinner fa-spin"></i><!-- /ko --> <a class="inactive-action pointer" data-bind="visible: columns().length > 0" href="#fieldsBulkEditor" data-toggle="modal"><i class="fa fa-edit"></i></a></h3>
+            <div class="card-body no-margin-top columns-form">
+              <!-- ko if: $root.createWizard.source.inputFormat() === 'manual' -->
+                <form class="form-inline inline-table" data-bind="foreach: columns">
+                  <!-- ko if: $parent.outputFormat() == 'table' -->
+                    <a class="pointer pull-right margin-top-20" data-bind="click: function() { $parent.columns.remove($data); }"><i class="fa fa-minus"></i></a>
+                    <div data-bind="template: { name: 'table-field-template', data: $data }" class="margin-top-10 field inline-block"></div>
+                    <div class="clearfix"></div>
                   <!-- /ko -->
+
+                  <!-- ko if: $parent.outputFormat() == 'index' -->
+                    <div data-bind="template: { name: 'index-field-template', data: $data }" class="margin-top-10 field inline-block index-field"></div>
+                    <div class="clearfix"></div>
+                  <!-- /ko -->
+                </form>
+
+                <div class="clearfix"></div>
+
+                <!-- ko if: outputFormat() == 'table' -->
+                  <a data-bind="click: function() { columns.push($root.loadDefaultField({})); }" class="pointer" title="${_('Add Field')}"><i class="fa fa-plus"></i> ${_('Add Field')}</a>
+                <!-- /ko -->
+              <!-- /ko -->
+
+              <!-- ko ifnot: $root.createWizard.source.inputFormat() === 'manual' -->
+              <form class="form-inline inline-table" data-bind="foreachVisible: { data: columns, minHeight: 44, container: '.content-panel', disableNiceScroll: true }">
+                <!-- ko if: $parent.outputFormat() == 'table' -->
+                  <div data-bind="template: { name: 'table-field-template', data: $data }" class="margin-top-10 field inline-block"></div>
+                  <div class="clearfix"></div>
                 <!-- /ko -->
 
                 <!-- ko if: $parent.outputFormat() == 'index' -->
-                  <div data-bind="template: { name: 'index-field-template', data: $data }" class="margin-top-10 field"></div>
+                  <div data-bind="template: { name: 'index-field-template', data: $data }" class="margin-top-10 field inline-block index-field"></div>
+                  <div class="clearfix"></div>
                 <!-- /ko -->
               </form>
 
-              <!-- ko if: $root.createWizard.source.inputFormat() == 'manual' && outputFormat() == 'table' -->
-                <a data-bind="click: function() { columns.push($root.loadDefaultField({})); }" class="pointer margin-left-20" title="${_('Add Field')}"><i class="fa fa-plus"></i> ${_('Add Field')}</a>
+              <div class="clearfix"></div>
               <!-- /ko -->
+
+
             </div>
           </div>
         <!-- /ko -->
@@ -594,24 +740,22 @@ ${ assist.assistPanel() }
         <button class="btn" data-bind="click: previousStep">${ _('Back') }</button>
       <!-- /ko -->
 
-      <!-- ko if: currentStep() == 1 && createWizard.source.show -->
-      <button class="btn" data-bind="visible: !createWizard.isGuessingFormat(), click: function() { currentStep(2); }">
+      <!-- ko if: currentStep() == 1 -->
+      <button class="btn" data-bind="enable: !createWizard.isGuessingFormat() && createWizard.source.show(), click: function() { currentStep(2); }">
         ${_('Next')}
       </button>
       <!-- /ko -->
 
       <!-- ko if: currentStep() == 2 -->
-        <button href="javascript:void(0)" class="btn btn-primary disable-feedback" data-bind="click: createWizard.indexFile, enable: createWizard.readyToIndex() && ! createWizard.indexingStarted()">
+        <button class="btn btn-primary disable-feedback" data-bind="click: createWizard.indexFile, enable: createWizard.readyToIndex() && ! createWizard.indexingStarted()">
           ${ _('Submit') } <i class="fa fa-spinner fa-spin" data-bind="visible: createWizard.indexingStarted"></i>
         </button>
       <!-- /ko -->
 
       <span data-bind="visible: createWizard.editorId">
-        <a href="javascript:void(0)" class="btn btn-success" data-bind="attr: {href: '${ url('notebook:editor') }?editor=' + createWizard.editorId() }" target="_blank" title="${ _('Open') }">
-          ${_('Status')}
-        </a>
-
-        ${ _('View collection') } <a href="javascript:void(0)" data-bind="attr: {href: '${ url("indexer:collections") }' +'#edit/' + createWizard.source.name() }, text: createWizard.source.name" target="_blank"></a>
+        <button class="btn btn-success" data-bind="click: function(){ window.open('${ url('notebook:editor') }?editor=' + createWizard.editorId()) }" title="${ _('Open') }">
+          ${_('Check status')}
+        </button>
       </span>
 
       <div id="importerNotebook"></div>
@@ -620,8 +764,8 @@ ${ assist.assistPanel() }
 
   <div id="fieldsBulkEditor" class="modal hide fade">
     <div class="modal-header">
-      <a href="#" class="close" data-dismiss="modal">&times;</a>
-      <h3>${ _('Write or paste comma separated field names') }</h3>
+      <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+      <h2 class="modal-title">${ _('Write or paste comma separated field names') }</h2>
     </div>
     <div class="modal-body">
       <input type="text" class="input-xxlarge" placeholder="${ _('e.g. id, name, salary') }" data-bind="textInput: createWizard.destination.bulkColumnNames">
@@ -636,41 +780,55 @@ ${ assist.assistPanel() }
 </script>
 
 
-<script type="text/html" id="format-settings">
-  <!-- ko foreach: {data: getArguments(), as: 'argument'} -->
-    <!-- ko template: {name: 'arg-' + argument.type, data:{description: argument.description, value: $parent[argument.name]}}--><!-- /ko -->
-  <!-- /ko -->
-</script>
-
-
 <script type="text/html" id="table-field-template">
   <div>
-    <label data-bind="visible: level() == 0 || ($parent.type() != 'array' && $parent.type() != 'map')">${ _('Name') }
+    <label data-bind="visible: level() == 0 || ($parent.type() != 'array' && $parent.type() != 'map')">${ _('Name') }&nbsp;
       <input type="text" class="input-large" placeholder="${ _('Field name') }" required data-bind="textInput: name">
     </label>
 
-    <label>${ _('Type') }
+    <label class="margin-left-5">${ _('Type') }&nbsp;
     <!-- ko if: ! (level() > 0 && $parent.type() == 'map') -->
-      <select class="input-small" data-bind="selectize: $root.createWizard.hiveFieldTypes, value: type"></select>
+      <select class="input-small" data-bind="browserAwareSelectize: $root.createWizard.hiveFieldTypes, value: type"></select>
     <!-- /ko -->
     <!-- ko if: level() > 0 && $parent.type() == 'map' -->
-      <select class="input-small" data-bind="selectize: $root.createWizard.hivePrimitiveFieldTypes, value: keyType"></select>
-      <select class="input-small" data-bind="selectize: $root.createWizard.hiveFieldTypes, value: type"></select>
+      <select class="input-small" data-bind="browserAwareSelectize: $root.createWizard.hivePrimitiveFieldTypes, value: keyType"></select>
+      <select class="input-small" data-bind="browserAwareSelectize: $root.createWizard.hiveFieldTypes, value: type"></select>
     <!-- /ko -->
 
       <input type="number" class="input-small" placeholder="${ _('Length') }" data-bind="value: length, visible: type() == 'varchar' || type() == 'char'">
+      <!-- ko if: $parent.type() == 'decimal' -->
+        <input type="number" class="input-small" placeholder="${ _('Precision') }" data-bind="value: precision">
+        <input type="number" class="input-small" placeholder="${ _('Scale') }" data-bind="value: scale">
+      <!-- /ko -->
     </label>
 
+    <!-- ko if: $root.createWizard.source.inputFormat() != 'manual' && typeof isPartition !== 'undefined' && isPartition() -->
+      <label class="margin-left-5">${ _('Value') }&nbsp;
+        <input type="text" class="input-medium margin-left-5" placeholder="${ _('Partition value') }" data-bind="value: partitionValue">
+      </label>
+    <!-- /ko -->
+
     <span data-bind="visible: level() == 0 || ($parent.type() != 'array' && $parent.type() != 'map')">
-       <input type="text" class="input-mini" placeholder="${ _('Field comment') }" data-bind="value: comment">
+      <a href="javascript:void(0)" title="${ _('Show field properties') }" data-bind="css: {'inactive-action': !showProperties()}, click: function() {showProperties(!showProperties()) }"><i class="fa fa-sliders"></i></a>
+
+      <span data-bind="visible: showProperties">
+        <input type="text" class="input-medium margin-left-5" placeholder="${ _('Field comment') }" data-bind="value: comment">
+      </span>
     </span>
 
     <!-- ko if: level() > 0 && $parent.type() == 'struct' && $parent.nested().length > 1 -->
       <a data-bind="click: function() { $parent.nested.remove($data); }"><i class="fa fa-minus"></i></a>
     <!-- /ko -->
     <!-- ko if: $root.createWizard.source.inputFormat() != 'manual' && level() == 0 && (typeof isPartition === 'undefined' || !isPartition()) -->
-      <div class="inline-block muted field-content-preview" data-bind="truncatedText: $root.createWizard.source.sample()[0][$index()]"></div>
-      <div class="inline-block muted field-content-preview" data-bind="truncatedText: $root.createWizard.source.sample()[1][$index()]"></div>
+      <!-- ko if: $root.createWizard.source.sample() && $root.createWizard.source.sample().length > 0 -->
+        <div class="inline-block muted field-content-preview" data-bind="truncatedText: $root.createWizard.source.sample()[0][$index()]"></div>
+        <!-- ko if: $root.createWizard.source.sample().length > 1 -->
+        <div class="inline-block muted field-content-preview" data-bind="truncatedText: $root.createWizard.source.sample()[1][$index()]"></div>
+        <!-- /ko -->
+      <!-- /ko -->
+      <!-- ko if: !$root.createWizard.source.sample() || $root.createWizard.source.sample().length === 0 -->
+      <div class="inline-block muted field-content-preview">${ _("No sample to be shown") }</div>
+      <!-- /ko -->
     <!-- /ko -->
 
     <!-- ko if: type() == 'array' || type() == 'map' || type() == 'struct' -->
@@ -682,16 +840,14 @@ ${ assist.assistPanel() }
 
 
 <script type="text/html" id="index-field-template">
-  <label>${ _('Name') }
+  <label>${ _('Name') }&nbsp;
     <input type="text" class="input-large" placeholder="${ _('Field name') }" data-bind="value: name">
   </label>
-  <label>${ _('Type') }
-    <select class="input-small" data-bind="selectize: $root.createWizard.fieldTypes, value: type"></select>
+  <label class="margin-left-5">${ _('Type') }&nbsp;
+    <select class="input-small" data-bind="browserAwareSelectize: $root.createWizard.fieldTypes, value: type"></select>
   </label>
-  <a href="javascript:void(0)" title="${ _('Show field properties') }" data-bind="click: function() {showProperties(! showProperties()) }">
-    <i class="fa fa-sliders"></i>
-  </a>
-  <span data-bind="visible: showProperties">
+  <a href="javascript:void(0)" title="${ _('Show field properties') }" data-bind="css: {'inactive-action': !showProperties()}, click: function() {showProperties(!showProperties()) }"><i class="fa fa-sliders"></i></a>
+  <span data-bind="visible: showProperties" class="field-properties">
     <label class="checkbox">
       <input type="checkbox" data-bind="checked: unique"> ${_('Unique')}
     </label>
@@ -719,16 +875,16 @@ ${ assist.assistPanel() }
 
 <script type="text/html" id="operation-template">
   <div class="operation">
-    <select data-bind="selectize: $root.createWizard.operationTypes.map(function(o){return o.name}), value: operation.type"></select>
+    <select data-bind="browserAwareSelectize: $root.createWizard.operationTypes.map(function(o){return o.name}), value: operation.type"></select>
     <!-- ko template: "args-template" --><!-- /ko -->
     <!-- ko if: operation.settings().outputType() == "custom_fields" -->
-      <label> ${ _('Number of expected fields') }
+      <label class="margin-left-5">${ _('Number of expected fields') }
       <input type="number" class="input-mini" data-bind="value: operation.numExpectedFields">
       </label>
     <!-- /ko -->
     <a class="pointer margin-left-20" data-bind="click: function(){$root.createWizard.removeOperation(operation, list)}" title="${ _('Remove') }"><i class="fa fa-times"></i></a>
     <div class="margin-left-20" data-bind="foreach: operation.fields">
-      <div data-bind="template: { name:'index-field-template', data:$data }" class="margin-top-10 field"></div>
+      <div data-bind="template: { name:'index-field-template', data:$data }" class="margin-top-10 field index-field"></div>
     </div>
   </div>
 </script>
@@ -742,21 +898,21 @@ ${ assist.assistPanel() }
 <script type="text/html" id="arg-text">
   <label>
     <div data-bind="text: description"></div>
-    <input type="text" class="input-small" data-bind="attr: {placeholder: description}, value: value">
+    <input type="text" class="input" data-bind="attr: {placeholder: description}, value: value">
   </label>
 </script>
 
 <script type="text/html" id="arg-text-delimiter">
   <label>
     <div data-bind="text: description"></div>
-    <select data-bind="selectize: $root.createWizard.customDelimiters, selectizeOptions: { create: true, maxLength: 2 }, value: value, optionsValue: 'value', optionsText: 'name', attr: {placeholder: description}"></select>
+    <select data-bind="selectize: $root.createWizard.customDelimiters, selectizeOptions: { onOptionAdd: function(value){ $root.createWizard.customDelimiters.push({ 'value': value, 'name': value }) }, create: true, maxLength: 2 }, value: value, optionsValue: 'value', optionsText: 'name', attr: {placeholder: description}"></select>
   </label>
 </script>
 
 <script type="text/html" id="arg-checkbox">
   <label class="checkbox">
     <input type="checkbox" data-bind="checked: value">
-    <div data-bind="text: description"></div>
+    <span data-bind="text: description" style="vertical-align: middle"></span>
   </label>
 </script>
 
@@ -793,19 +949,24 @@ ${ assist.assistPanel() }
 <script type="text/html" id="importerNotebook-progress">
   <!-- ko with: selectedNotebook  -->
     <!-- ko foreach: snippets  -->
-      <div class="progress-snippet progress active" data-bind="css: {
+      <div class="progress-snippet progress" data-bind="css: {
         'progress-starting': progress() == 0 && status() == 'running',
         'progress-warning': progress() > 0 && progress() < 100,
         'progress-success': progress() == 100,
         'progress-danger': progress() == 0 && errors().length > 0}" style="background-color: #FFF; width: 100%; height: 4px">
         <div class="bar" data-bind="style: {'width': (errors().length > 0 ? 100 : Math.max(2, progress())) + '%'}"></div>
       </div>
+    <div class="snippet-error-container alert alert-error alert-error-gradient" data-bind="visible: errors().length > 0">
+      <ul class="unstyled" data-bind="foreach: errors">
+        <li data-bind="text: message"></li>
+      </ul>
+    </div>
     <!-- /ko -->
   <!-- /ko -->
 </script>
 
 
-<script type="text/javascript" charset="utf-8">
+<script type="text/javascript">
   (function () {
     ko.options.deferUpdates = true;
 
@@ -984,30 +1145,33 @@ ${ assist.assistPanel() }
       self.sample = ko.observableArray();
       self.sampleCols = ko.observableArray();
 
-      self.inputFormat = ko.observable('file');
+      self.inputFormat = ko.observable(wizard.prefill.source_type() == 'manual' ? 'manual' : 'file');
       self.inputFormat.subscribe(function(val) {
         wizard.destination.columns.removeAll();
-        if (val == 'query') {
-          self.getDocuments();
+        self.sample.removeAll();
+        self.path('');
+        resizeElements();
+      });
+      self.inputFormatsAll = ko.observableArray([
+          {'value': 'file', 'name': 'File'},
+          {'value': 'manual', 'name': 'Manually'},
+          % if ENABLE_NEW_INDEXER.get():
+          {'value': 'query', 'name': 'SQL Query'},
+          {'value': 'table', 'name': 'Table'},
+          % endif
+          ##{'value': 'dbms', 'name': 'DBMS'},
+          ##{'value': 'text', 'name': 'Paste Text'},
+      ]);
+      self.inputFormatsManual = ko.observableArray([
+          {'value': 'manual', 'name': 'Manually'}
+      ]);
+      self.inputFormats = ko.pureComputed(function() {
+        if (wizard.prefill.source_type() == 'manual') {
+          return self.inputFormatsManual();
+        } else {
+          return self.inputFormatsAll();
         }
       });
-      self.inputFormats = ko.observableArray([
-          {'value': 'file', 'name': 'File'},
-          {'value': 'table', 'name': 'Table'},
-          {'value': 'text', 'name': 'Paste Text'},
-          {'value': 'query', 'name': 'SQL Query'},
-          {'value': 'dbms', 'name': 'DBMS'},
-          {'value': 'manual', 'name': 'Manually'},
-      ]);
-      if (wizard.prefill.source_type) {
-        self.inputFormats([
-            {'value': 'file', 'name': 'File'},
-            {'value': 'manual', 'name': 'Manually'},
-        ]);
-        if (wizard.prefill.source_type() == 'manual') {
-          self.inputFormat(wizard.prefill.source_type());
-        }
-      }
 
       // File
       self.path = ko.observable('');
@@ -1016,7 +1180,14 @@ ${ assist.assistPanel() }
           vm.createWizard.guessFormat();
           vm.createWizard.destination.nonDefaultLocation(val);
         }
-      })
+        resizeElements();
+      });
+      self.isObjectStore = ko.computed(function() {
+        return self.inputFormat() == 'file' && /^s3a:\/\/.*$/.test(self.path());
+      });
+      self.isObjectStore.subscribe(function(newVal) {
+        vm.createWizard.destination.useDefaultLocation(! newVal);
+      });
 
       // Table
       self.table = ko.observable('');
@@ -1026,44 +1197,30 @@ ${ assist.assistPanel() }
       self.databaseName = ko.computed(function() {
         return self.table().indexOf('.') > 0 ? self.table().split('.', 2)[0] : 'default';
       });
+      self.table.subscribe(function(val) {
+        resizeElements();
+      });
+      self.apiHelperType = ko.observable('hive');
 
       // Queries
       self.query = ko.observable('');
-      self.queries = ko.observableArray([]);
       self.draggedQuery = ko.observable();
-      self.getDocuments = function() {
-        $.get('/desktop/api2/docs/', {
-          type: 'query-hive',
-          include_trashed: false,
-          sort: '-last_modified',
-          limit: 100
-        }, function(data) {
-          if (data && data.documents) {
-            var queries = [];
-            $.each(data.documents, function(index, query) {
-              queries.push(ko.mapping.fromJS(query));
-            });
-            self.queries(queries);
-          }
-        });
-      };
-
-      var waitForRendered = -1;
-      self.selectQuery = function () {
-        window.clearTimeout(waitForRendered);
-        waitForRendered = window.setTimeout(function(){
-          if (self.draggedQuery()){
-            self.query(ko.utils.arrayFilter(self.queries(), function(q) {
-              return q.id() === self.draggedQuery();
-            })[0]);
-          }
-        }, 50);
-      }
 
       self.format = ko.observable();
       self.format.subscribe(function(newVal) {
-        if (newVal.hasHeader !== 'undefined') {
-          vm.createWizard.destination.hasHeader(newVal.hasHeader);
+        if (typeof newVal.hasHeader !== 'undefined') {
+          vm.createWizard.destination.hasHeader(newVal.hasHeader());
+          newVal.hasHeader.subscribe(function(newVal) {
+            vm.createWizard.destination.hasHeader(newVal);
+          });
+        }
+
+        if (typeof newVal.fieldSeparator !== 'undefined') {
+          vm.createWizard.destination.useCustomDelimiters(newVal.fieldSeparator() != ',');
+          vm.createWizard.destination.customFieldDelimiter(newVal.fieldSeparator());
+          newVal.fieldSeparator.subscribe(function(newVal) {
+            vm.createWizard.destination.customFieldDelimiter(newVal);
+          });
         }
       });
 
@@ -1071,7 +1228,7 @@ ${ assist.assistPanel() }
         if (self.inputFormat() == 'file') {
           return self.path().length > 0;
         } else if (self.inputFormat() == 'table') {
-          return self.table().length > 0;
+          return self.tableName().length > 0;
         } else if (self.inputFormat() == 'query') {
           return self.query();
         } else if (self.inputFormat() == 'manual') {
@@ -1083,8 +1240,10 @@ ${ assist.assistPanel() }
         var name = ''
 
         if (self.inputFormat() == 'file') {
+          name = wizard.prefill.target_path().length > 0 ? wizard.prefill.target_path() : 'default';
+
           if (self.path()) {
-            name = self.path().split('/').pop().split('.')[0];
+            name += '.' + self.path().split('/').pop().split('.')[0];
           }
         } else if (self.inputFormat() == 'table') {
           if (self.table().split('.', 2).length == 2) {
@@ -1092,13 +1251,13 @@ ${ assist.assistPanel() }
           }
         } else if (self.inputFormat() == 'query') {
           if (self.query()) {
-            name = val.name();
+            name = self.name();
           }
         } else if (self.inputFormat() == 'manual') {
-          name = wizard.prefill.target_path ? wizard.prefill.target_path() + '.' : '';
+          name = wizard.prefill.target_path().length > 0 ? wizard.prefill.target_path() + '.' : '';
         }
 
-        return name.replace(' ', '_');
+        return name.replace(/ /g, '_').toLowerCase();
       });
       self.defaultName.subscribe(function(newVal) {
         vm.createWizard.destination.name(newVal);
@@ -1108,35 +1267,66 @@ ${ assist.assistPanel() }
     var Destination = function (vm, wizard) {
       var self = this;
 
-      self.name = ko.observable('');
-      self.name.subscribe(function (name) {
+      self.name = ko.observable('').extend({throttle: 500});
+      self.name.subscribe(function(name) {
         var exists = false;
 
         if (name.length == 0) {
           self.isTargetExisting(false);
+          self.isTargetChecking(false);
         }
         else if (self.outputFormat() == 'file') {
           // Todo
           // self.path()
         }
         else if (self.outputFormat() == 'table') {
-          $.get("/beeswax/api/autocomplete/" + self.databaseName() + '/' + self.tableName(), function (data) {
-            self.isTargetExisting(data.code != 500);
-          }).fail(function (xhr, textStatus, errorThrown) { self.isTargetExisting(false); });
+          if (self.tableName() !== '') {
+            self.isTargetExisting(false);
+            self.isTargetChecking(true);
+            $.get("/beeswax/api/autocomplete/" + self.databaseName() + '/' + self.tableName(), function (data) {
+              self.isTargetExisting(data.code != 500);
+              self.isTargetChecking(false);
+            }).fail(function (xhr, textStatus, errorThrown) { self.isTargetExisting(false); self.isTargetChecking(false); });
+          }
+          else {
+            self.isTargetExisting(false);
+            self.isTargetChecking(false);
+          }
+        }
+        else if (self.outputFormat() == 'database') {
+          if (self.databaseName() !== '') {
+            self.isTargetExisting(false);
+            self.isTargetChecking(true);
+            $.get("/beeswax/api/autocomplete/" + self.databaseName(), function (data) {
+              self.isTargetExisting(data.tables_meta && data.tables_meta.length > 0);
+              self.isTargetChecking(false);
+            }).fail(function (xhr, textStatus, errorThrown) { self.isTargetExisting(false); self.isTargetChecking(false); });
+          }
+          else {
+            self.isTargetExisting(false);
+            self.isTargetChecking(false);
+          }
         }
         else if (self.outputFormat() == 'index') {
           $.post("/search/get_collection", {
               name: self.name()
           }, function (data) {
             self.isTargetExisting(data.status == 0);
-          }).fail(function (xhr, textStatus, errorThrown) { self.isTargetExisting(false); });
+            self.isTargetChecking(false);
+          }).fail(function (xhr, textStatus, errorThrown) { self.isTargetExisting(false); self.isTargetChecking(false); });
         }
+        resizeElements();
       });
 
+      self.apiHelperType = ko.observable('hive');
+
       self.description = ko.observable('');
-      self.outputFormat = ko.observable('table');
-      self.outputFormat.subscribe(function () {
-        wizard.guessFieldTypes();
+      self.outputFormat = ko.observable(wizard.prefill.target_type() || 'table');
+      self.outputFormat.subscribe(function (newValue) {
+        if (newValue && newValue != 'database' && (newValue == 'table' && wizard.source.path().length > 0)) {
+          wizard.guessFieldTypes();
+          resizeElements();
+        }
       });
       self.outputFormatsList = ko.observableArray([
           {'name': 'Table', 'value': 'table'},
@@ -1155,16 +1345,21 @@ ${ assist.assistPanel() }
           return true;
         })
       });
-      if (wizard.prefill.target_type) {
-        self.outputFormat(wizard.prefill.target_type());
-        if (wizard.prefill.target_type() == 'database') {
+      wizard.prefill.target_type.subscribe(function(newValue) {
+        self.outputFormat(newValue || 'table');
+        if (newValue == 'database') {
           vm.currentStep(2);
-        };
-      }
+        } else {
+          vm.currentStep(1);
+        }
+      });
 
       self.format = ko.observable();
       self.columns = ko.observableArray();
+
+      // UI
       self.bulkColumnNames = ko.observable('');
+      self.showProperties = ko.observable(false);
 
       self.columns.subscribe(function (newVal) {
         self.bulkColumnNames(newVal.map(function (item) {
@@ -1194,6 +1389,7 @@ ${ assist.assistPanel() }
       }
 
       self.isTargetExisting = ko.observable();
+      self.isTargetChecking = ko.observable(false);
       self.existingTargetUrl = ko.computed(function() { // Should open generic sample popup instead
         if (self.isTargetExisting()) {
           if (self.outputFormat() == 'file') {
@@ -1202,6 +1398,9 @@ ${ assist.assistPanel() }
           }
           else if (self.outputFormat() == 'table') {
             return '/metastore/table/' + self.databaseName() + '/' + self.tableName();
+          }
+          else if (self.outputFormat() == 'database') {
+            return '/metastore/tables/' + self.databaseName();
           }
           else if (self.outputFormat() == 'index') {
             return '${ url("indexer:collections") }#edit/' + self.name();
@@ -1215,7 +1414,7 @@ ${ assist.assistPanel() }
         return self.outputFormat() == 'table' && self.name().indexOf('.') > 0 ? self.name().split('.', 2)[1] : self.name();
       });
       self.databaseName = ko.computed(function() {
-        return self.outputFormat() == 'table' && self.name().indexOf('.') > 0 ? self.name().split('.', 2)[0] : 'default';
+        return self.outputFormat() == 'table' && self.name().indexOf('.') > 0 ? self.name().split('.', 2)[0] : (self.name() !== '' ? self.name() : 'default');
       });
       self.tableFormat = ko.observable('text');
       self.tableFormat.subscribe(function(newVal) {
@@ -1223,23 +1422,24 @@ ${ assist.assistPanel() }
           self.kuduPartitionColumns.push(ko.mapping.fromJS(self.KUDU_DEFAULT_PARTITION_COLUMN));
         }
       });
-      self.KUDU_DEFAULT_RANGE_PARTITION_COLUMN = {values: [''], name: 'VALUES', lower_val: 0, include_lower_val: '<=', upper_val: 1, include_upper_val: '<='};
+      self.KUDU_DEFAULT_RANGE_PARTITION_COLUMN = {values: [{value: ''}], name: 'VALUES', lower_val: 0, include_lower_val: '<=', upper_val: 1, include_upper_val: '<='};
       self.KUDU_DEFAULT_PARTITION_COLUMN = {columns: [], range_partitions: [self.KUDU_DEFAULT_RANGE_PARTITION_COLUMN], name: 'HASH', int_val: 16};
 
       self.tableFormats = ko.observableArray([
           {'value': 'text', 'name': 'Text'},
           {'value': 'parquet', 'name': 'Parquet'},
-          {'value': 'json', 'name': 'Json'},
           {'value': 'kudu', 'name': 'Kudu'},
-          {'value': 'orc', 'name': 'ORC'},
+          {'value': 'csv', 'name': 'Csv'},
           {'value': 'avro', 'name': 'Avro'},
-          {'value': 'rcfile', 'name': 'RCFile'},
-          {'value': 'sequencefile', 'name': 'SequenceFile'}
+          {'value': 'json', 'name': 'Json'},
+          {'value': 'regexp', 'name': 'Regexp'},
+          {'value': 'orc', 'name': 'ORC'},
       ]);
 
       self.partitionColumns = ko.observableArray();
       self.kuduPartitionColumns = ko.observableArray();
       self.primaryKeys = ko.observableArray();
+      self.primaryKeyObjects = ko.observableArray();
 
       self.importData = ko.observable(true);
       self.useDefaultLocation = ko.observable(true);
@@ -1285,13 +1485,17 @@ ${ assist.assistPanel() }
       self.fileTypes = ${file_types_json | n};
       self.prefill = ko.mapping.fromJS(${prefill | n});
 
+      self.prefill.source_type.subscribe(function(newValue) {
+        self.source.inputFormat(newValue == 'manual' ? 'manual' : 'file');
+      });
+
       self.show = ko.observable(true);
       self.showCreate = ko.observable(false);
 
       self.source = new Source(vm, self);
       self.destination = new Destination(vm, self);
 
-      self.customDelimiters = ko.observable([
+      self.customDelimiters = ko.observableArray([
         {'value': ',', 'name': 'Comma (,)'},
         {'value': '\\t', 'name': '^Tab (\\t)'},
         {'value': '\\n', 'name': 'New line'},
@@ -1310,9 +1514,21 @@ ${ assist.assistPanel() }
 
       self.readyToIndex = ko.computed(function () {
         var validFields = self.destination.columns().length || self.destination.outputFormat() == 'database';
-        var validDestination = self.destination.name().length > 0 && (['table', 'database'].indexOf(self.destination.outputFormat()) == -1 || /^[a-zA-Z0-9_]*$/.test(self.destination.name()));
+        var validDestination = self.destination.name().length > 0 && (['table', 'database'].indexOf(self.destination.outputFormat()) == -1 || /^([a-zA-Z0-9_]+\.)?[a-zA-Z0-9_]+$/.test(self.destination.name()));
+        var validTableColumns = self.destination.outputFormat() != 'table' || ($.grep(self.destination.columns(), function(column) {
+            return column.name().length == 0;
+          }).length == 0
+          && $.grep(self.destination.partitionColumns(), function(column) {
+            return column.name().length == 0 || (self.source.inputFormat() != 'manual' && column.partitionValue().length == 0);
+          }).length == 0
+        );
+        var isTargetAlreadyExisting = ! self.destination.isTargetExisting() || self.destination.outputFormat() == 'index';
+        var isValidTable = self.destination.outputFormat() != 'table' || (
+          self.destination.tableFormat() != 'kudu' || (self.destination.kuduPartitionColumns().length > 0 &&
+              $.grep(self.destination.kuduPartitionColumns(), function(partition) { return partition.columns().length > 0 }).length == self.destination.kuduPartitionColumns().length && self.destination.primaryKeys().length > 0)
+        );
 
-        return validDestination && validFields;
+        return validDestination && validFields && validTableColumns && isTargetAlreadyExisting && isValidTable;
       });
 
       self.formatTypeSubscribed = false;
@@ -1345,15 +1561,20 @@ ${ assist.assistPanel() }
         $.post("${ url('indexer:guess_format') }", {
           "fileFormat": ko.mapping.toJSON(self.source)
         }, function (resp) {
-          var newFormat = ko.mapping.fromJS(new FileType(resp['type'], resp));
-          self.source.format(newFormat);
-          self.guessFieldTypes();
+          if (resp.status != 0) {
+            $(document).trigger("error", resp.message);
+          } else {
+            var newFormat = ko.mapping.fromJS(new FileType(resp['type'], resp));
+            self.source.format(newFormat);
+            self.guessFieldTypes();
+          }
 
           self.isGuessingFormat(false);
           viewModel.wizardEnabled(true);
         }).fail(function (xhr, textStatus, errorThrown) {
           $(document).trigger("error", xhr.responseText);
           viewModel.isLoading(false);
+          self.isGuessingFormat(false);
         });
       };
 
@@ -1371,7 +1592,7 @@ ${ assist.assistPanel() }
             if (self.destination.outputFormat() === 'table'){
               entry.type = MAPPINGS.get(MAPPINGS.SOLR_TO_HIVE, entry.type, 'string');
             }
-            arr[i] = loadField(entry, self.destination.columns, i);
+            arr[i] = loadField(entry, self.destination, i);
           });
           self.source.sampleCols(resp.sample_cols ? resp.sample_cols : resp.columns);
           self.source.sample(resp.sample);
@@ -1401,64 +1622,71 @@ ${ assist.assistPanel() }
           "source": ko.mapping.toJSON(self.source),
           "destination": ko.mapping.toJSON(self.destination)
         }, function (resp) {
-          self.showCreate(true);
-          self.editorId(resp.history_id);
-          self.jobId(resp.handle.id);
-          $('#importerNotebook').html($('#importerNotebook-progress').html());
+          if (resp.status != 0) {
+            $(document).trigger("error", resp.message);
+            self.indexingStarted(false);
+            self.isIndexing(false);
+          } else {
+            self.showCreate(true);
+            self.editorId(resp.history_id);
+            self.jobId(resp.handle.id);
+            $('#importerNotebook').html($('#importerNotebook-progress').html());
 
-          self.editorVM = new EditorViewModel(resp.history_uuid, '', {
-            user: '${ user.username }',
-            userId: ${ user.id },
-            languages: [{name: "Java", type: "java"}, {name: "Hive SQL", type: "hive"}], // TODO reuse
-            snippetViewSettings: {
-              java : {
-                snippetIcon: 'fa-file-archive-o '
-              },
-              hive: {
-                placeHolder: '${ _("Example: SELECT * FROM tablename, or press CTRL + space") }',
-                aceMode: 'ace/mode/hive',
-                snippetImage: '${ static("beeswax/art/icon_beeswax_48.png") }',
-                sqlDialect: true
-              },
-              impala: {
-                placeHolder: '${ _("Example: SELECT * FROM tablename, or press CTRL + space") }',
-                aceMode: 'ace/mode/impala',
-                snippetImage: '${ static("impala/art/icon_impala_48.png") }',
-                sqlDialect: true
-              }
-            }
-          });
-          self.editorVM.editorMode(true);
-          self.editorVM.isNotificationManager(true);
-          ko.cleanNode($("#importerNotebook")[0]);
-          ko.applyBindings(self.editorVM, $("#importerNotebook")[0]);
-
-          self.editorVM.openNotebook(resp.history_uuid, null, true, function(){
-            self.editorVM.selectedNotebook().snippets()[0].progress.subscribe(function(val){
-              if (val == 100){
-                self.indexingStarted(false);
-                self.isIndexing(false);
-                self.indexingSuccess(true);
-              }
-            });
-            self.editorVM.selectedNotebook().snippets()[0].status.subscribe(function(val){
-              if (val == 'failed'){
-                self.isIndexing(false);
-                self.indexingStarted(false);
-                self.indexingError(true);
-              } else if (val == 'available') {
-                var snippet = self.editorVM.selectedNotebook().snippets()[0]; // Could be native to editor at some point
-                if (! snippet.result.handle().has_more_statements) {
-                  if (self.editorVM.selectedNotebook().onSuccessUrl()) {
-                    window.location.href = self.editorVM.selectedNotebook().onSuccessUrl();
-                  }
-                } else { // Perform last DROP statement execute
-                  snippet.execute();
+            self.editorVM = new EditorViewModel(resp.history_uuid, '', {
+              user: '${ user.username }',
+              userId: ${ user.id },
+              languages: [{name: "Java", type: "java"}, {name: "Hive SQL", type: "hive"}], // TODO reuse
+              snippetViewSettings: {
+                java : {
+                  snippetIcon: 'fa-file-archive-o '
+                },
+                hive: {
+                  placeHolder: '${ _("Example: SELECT * FROM tablename, or press CTRL + space") }',
+                  aceMode: 'ace/mode/hive',
+                  snippetImage: '${ static("beeswax/art/icon_beeswax_48.png") }',
+                  sqlDialect: true
+                },
+                impala: {
+                  placeHolder: '${ _("Example: SELECT * FROM tablename, or press CTRL + space") }',
+                  aceMode: 'ace/mode/impala',
+                  snippetImage: '${ static("impala/art/icon_impala_48.png") }',
+                  sqlDialect: true
                 }
               }
             });
-            self.editorVM.selectedNotebook().snippets()[0].checkStatus();
-          });
+            self.editorVM.editorMode(true);
+            self.editorVM.isNotificationManager(true);
+            ko.cleanNode($("#importerNotebook")[0]);
+            ko.applyBindings(self.editorVM, $("#importerNotebook")[0]);
+
+            self.editorVM.openNotebook(resp.history_uuid, null, true, function(){
+              self.editorVM.selectedNotebook().snippets()[0].progress.subscribe(function(val){
+                if (val == 100){
+                  self.indexingStarted(false);
+                  self.isIndexing(false);
+                  self.indexingSuccess(true);
+                }
+              });
+              self.editorVM.selectedNotebook().snippets()[0].status.subscribe(function(val){
+                if (val == 'failed'){
+                  self.isIndexing(false);
+                  self.indexingStarted(false);
+                  self.indexingError(true);
+                } else if (val == 'available') {
+                  var snippet = self.editorVM.selectedNotebook().snippets()[0]; // Could be native to editor at some point
+                  if (! snippet.result.handle().has_more_statements) {
+                    if (self.editorVM.selectedNotebook().onSuccessUrl()) {
+                      huePubSub.publish('assist.clear.db.cache', {sourceType: 'hive'});
+                      window.location.href = self.editorVM.selectedNotebook().onSuccessUrl();
+                    }
+                  } else { // Perform last DROP statement execute
+                    snippet.execute();
+                  }
+                }
+              });
+              self.editorVM.selectedNotebook().snippets()[0].checkStatus();
+            });
+          }
           viewModel.isLoading(false);
         }).fail(function (xhr, textStatus, errorThrown) {
           $(document).trigger("error", xhr.responseText);
@@ -1481,14 +1709,18 @@ ${ assist.assistPanel() }
           $(document).trigger("error", xhr.responseText);
         });
 % endif
+
+        hueAnalytics.log('importer', 'submit/' + self.source.inputFormat() + '/' + self.destination.outputFormat());
       }
 
       self.removeOperation = function (operation, operationList) {
         operationList.remove(operation);
+        hueAnalytics.log('importer', 'step/removeOperation');
       }
 
       self.addOperation = function (field) {
         field.operations.push(new Operation("split"));
+        hueAnalytics.log('importer', 'step/addOperation');
       }
 
       self.load = function (state) {
@@ -1522,11 +1754,14 @@ ${ assist.assistPanel() }
           if (newVal.indexOf(',') > -1) {
             var fields = newVal.split(',');
             fields.forEach(function (val, i) {
-              if (parent.length <= i + idx && parent()[i + idx]) {
-                parent()[i + idx].name(val);
+              if (i + idx < parent.columns().length) {
+                parent.columns()[i + idx].name(val);
               }
             });
           }
+          parent.bulkColumnNames(parent.columns().map(function (item) {
+            return item.name()
+          }).join(','));
         });
       }
 
@@ -1550,23 +1785,25 @@ ${ assist.assistPanel() }
       return koField;
     }
 
-    var IndexerViewModel = function (options) {
+    var IndexerViewModel = function () {
       var self = this;
 
-      self.apiHelper = ApiHelper.getInstance(options);
+      self.apiHelper = ApiHelper.getInstance();
       self.assistAvailable = ko.observable(true);
       self.isLeftPanelVisible = ko.observable();
       self.apiHelper.withTotalStorage('assist', 'assist_panel_visible', self.isLeftPanelVisible, true);
       self.loadDefaultField = loadDefaultField;
 
+      self.createWizard = new CreateWizard(self);
+
       // Wizard related
       self.wizardEnabled = ko.observable(false);
-      self.currentStep = ko.observable(1);
+      self.currentStep = ko.observable(self.createWizard.prefill.target_type() == 'database' ? 2 : 1);
       self.currentStep.subscribe(function () {
         $('.content-panel').scrollTop(0);
       });
       self.previousStepVisible = ko.pureComputed(function(){
-        return self.currentStep() > 1;
+        return self.currentStep() > 1 && self.createWizard.destination.outputFormat() != 'database';
       });
       self.nextStepVisible = ko.pureComputed(function(){
         return self.currentStep() < 3 && self.wizardEnabled();
@@ -1574,41 +1811,48 @@ ${ assist.assistPanel() }
       self.nextStep = function () {
         if (self.nextStepVisible()){
           self.currentStep(self.currentStep() + 1);
+          hueAnalytics.log('importer', 'step/' + self.currentStep());
         }
       }
       self.previousStep = function () {
         if (self.previousStepVisible()){
           self.currentStep(self.currentStep() - 1);
+          hueAnalytics.log('importer', 'step/' + self.currentStep());
         }
       }
 
-      self.createWizard = new CreateWizard(self);
       self.isLoading = ko.observable(false);
+
     };
 
     var viewModel;
 
+    function resizeElements () {
+      var $contentPanel = $('#importerComponents').find('.content-panel-inner');
+      $('.form-actions').width($contentPanel.width() - 50);
+      $('.step-indicator-fixed').width($contentPanel.width());
+      document.styleSheets[0].addRule('.step-indicator li:first-child:before','max-width: ' + ($contentPanel.find('.step-indicator li:first-child .caption').width()) + 'px');
+      document.styleSheets[0].addRule('.step-indicator li:first-child:before','left: ' + ($contentPanel.find('.step-indicator li:first-child .caption').width()/2) + 'px');
+      document.styleSheets[0].addRule('.step-indicator li:last-child:before','max-width: ' + ($contentPanel.find('.step-indicator li:last-child .caption').width()) + 'px');
+      document.styleSheets[0].addRule('.step-indicator li:last-child:before','right: ' + ($contentPanel.find('.step-indicator li:last-child .caption').width()/2) + 'px');
+    }
+
     $(document).ready(function () {
-      var options = {
-        user: '${ user.username }',
-        i18n: {
-          errorLoadingDatabases: "${ _('There was a problem loading the databases') }",
-          errorLoadingTablePreview: "${ _('There was a problem loading the table preview.') }"
-        }
-      }
-      viewModel = new IndexerViewModel(options);
+      viewModel = new IndexerViewModel();
       ko.applyBindings(viewModel, $('#importerComponents')[0]);
+
 
       var draggableMeta = {};
       huePubSub.subscribe('draggable.text.meta', function (meta) {
         draggableMeta = meta;
       });
 
-      huePubSub.subscribe('split.panel.resized', function () {
-        $('.form-actions').width($('.content-panel').width() - 50);
-      });
 
-      $('.form-actions').width($('.content-panel').width() - 50);
+      huePubSub.subscribe('split.panel.resized', resizeElements);
+
+      hueUtils.waitForRendered('.step-indicator li:first-child .caption', function(el){ return el.width() < $('#importerComponents').find('.content-panel-inner').width()/2 }, resizeElements);
+
+      $(window).on('resize', resizeElements);
 
       $('.content-panel').droppable({
         accept: ".draggableText",
@@ -1632,17 +1876,12 @@ ${ assist.assistPanel() }
               if (draggableMeta.definition.type === 'query-hive'){
                 generatedName += draggableMeta.definition.name;
                 viewModel.createWizard.source.inputFormat('query');
-                viewModel.createWizard.source.draggedQuery(draggableMeta.definition.id);
+                viewModel.createWizard.source.draggedQuery(draggableMeta.definition.uuid);
               }
               break;
           }
           if (generatedName !== 'idx' && viewModel.createWizard.source.name() === ''){
             viewModel.createWizard.source.name(generatedName);
-          }
-          else {
-            if (draggableMeta.table !== ''){
-              viewModel.createWizard.source.selectQuery();
-            }
           }
         }
       });

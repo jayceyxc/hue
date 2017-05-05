@@ -27,10 +27,7 @@
 ${ commonheader(_("Solr Indexes"), "search", user, request, "60px") | n,unicode }
 
 <script src="${ static('desktop/ext/js/jquery/plugins/jquery-ui-1.10.4.custom.min.js') }"></script>
-<script src="${ static('desktop/js/jquery.huedatatable.js') }"></script>
-<script src="${ static('desktop/ext/js/d3.v3.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/selectize.min.js') }"></script>
-<script src="${ static('desktop/js/apiHelper.js') }"></script>
 <script src="${ static('metastore/js/metastore.ko.js') }"></script>
 <script src="${ static('desktop/js/ko.charts.js') }"></script>
 <script src="${ static('desktop/ext/js/knockout-sortable.min.js') }"></script>
@@ -94,10 +91,6 @@ ${ assist.assistPanel() }
     overflow-x: hidden;
   }
 
-  .fileChooserBtn {
-    height: 29px;
-  }
-
   .form-control.path {
     vertical-align: top;
   }
@@ -116,12 +109,12 @@ ${ assist.assistPanel() }
 </style>
 
 <span id="indexerComponents" class="notebook">
-<div class="navbar navbar-inverse navbar-fixed-top">
+<div class="navbar hue-title-bar">
   <div class="navbar-inner">
     <div class="container-fluid">
       <div class="nav-collapse">
         <ul class="nav">
-          <li class="currentApp">
+          <li class="app-header">
             <a href="/indexer/indexer">
               <i class="fa fa-database app-icon"></i> ${_('Indexes')}</a>
             </a>
@@ -153,10 +146,6 @@ ${ assist.assistPanel() }
                 user: '${user.username}',
                 onlySql: false,
                 sql: {
-                  sourceTypes: [{
-                    name: 'hive',
-                    type: 'hive'
-                  }],
                   navigationSettings: {
                     openItem: false,
                     showStats: true
@@ -180,8 +169,8 @@ ${ assist.assistPanel() }
 
 <div id="chooseFile" class="modal hide fade">
   <div class="modal-header">
-    <a href="#" class="close" data-dismiss="modal">&times;</a>
-    <h3>${_('Choose a file')}</h3>
+    <button type="button" class="close" data-dismiss="modal" aria-label="${ _('Close') }"><span aria-hidden="true">&times;</span></button>
+    <h2 class="modal-title">${_('Choose a file')}</h2>
   </div>
   <div class="modal-body">
     <div id="filechooser"></div>
@@ -328,7 +317,7 @@ ${ assist.assistPanel() }
         <i class="fa fa-spinner fa-spin"></i>
         <!-- /ko -->
         <div style="overflow: auto">
-          <table class="table table-striped table-condensed" style="margin:auto;text-align:left">
+          <table class="table table-condensed" style="margin:auto;text-align:left">
             <thead>
             <tr data-bind="foreach: createWizard.fileFormat().columns">
               <!-- ko template: 'field-preview-header-template' --><!-- /ko -->
@@ -371,7 +360,7 @@ ${ assist.assistPanel() }
       <!-- /ko -->
 
       <!-- ko if: currentStep() == 3 -->
-        <button href="javascript:void(0)" class="btn btn-primary disable-feedback" data-bind="click: createWizard.indexFile, enable: createWizard.readyToIndex() && !createWizard.indexingStarted()">
+        <button class="btn btn-primary disable-feedback" data-bind="click: createWizard.indexFile, enable: createWizard.readyToIndex() && !createWizard.indexingStarted()">
           ${_('Index it!')} <i class="fa fa-spinner fa-spin" data-bind="visible: createWizard.indexingStarted"></i>
         </button>
       <!-- /ko -->
@@ -499,7 +488,7 @@ ${ assist.assistPanel() }
 <script type="text/html" id="notebook-progress">
   <!-- ko with: selectedNotebook  -->
     <!-- ko foreach: snippets  -->
-      <div class="progress-snippet progress active" data-bind="css: {
+      <div class="progress-snippet progress" data-bind="css: {
         'progress-starting': progress() == 0 && status() == 'running',
         'progress-warning': progress() > 0 && progress() < 100,
         'progress-success': progress() == 100,
@@ -511,7 +500,7 @@ ${ assist.assistPanel() }
 </script>
 
 
-<script type="text/javascript" charset="utf-8">
+<script type="text/javascript">
   (function () {
     ko.options.deferUpdates = true;
 
@@ -950,10 +939,10 @@ ${ assist.assistPanel() }
       return koField;
     }
 
-    var IndexerViewModel = function (options) {
+    var IndexerViewModel = function () {
       var self = this;
 
-      self.apiHelper = ApiHelper.getInstance(options);
+      self.apiHelper = ApiHelper.getInstance();
       self.assistAvailable = ko.observable(true);
       self.isLeftPanelVisible = ko.observable();
       self.apiHelper.withTotalStorage('assist', 'assist_panel_visible', self.isLeftPanelVisible, true);
@@ -971,12 +960,12 @@ ${ assist.assistPanel() }
         if (self.nextStepVisible()){
           self.currentStep(self.currentStep()+1);
         }
-      }
+      };
       self.previousStep = function () {
         if (self.previousStepVisible()){
           self.currentStep(self.currentStep()-1);
         }
-      }
+      };
 
       self.collections = ${ indexes_json | n }.
       filter(function (index) {
@@ -998,14 +987,7 @@ ${ assist.assistPanel() }
     var viewModel;
 
     $(document).ready(function () {
-      var options = {
-        user: '${ user.username }',
-        i18n: {
-          errorLoadingDatabases: "${ _('There was a problem loading the databases') }",
-          errorLoadingTablePreview: "${ _('There was a problem loading the table preview.') }"
-        }
-      }
-      viewModel = new IndexerViewModel(options);
+      viewModel = new IndexerViewModel();
       ko.applyBindings(viewModel, $('#indexerComponents')[0]);
 
       var draggableMeta = {};

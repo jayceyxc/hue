@@ -22,7 +22,7 @@ import re
 import time
 
 from nose.plugins.skip import SkipTest
-from nose.tools import assert_equal, assert_true, assert_false
+from nose.tools import assert_equal, assert_true
 
 from django.contrib.auth.models import User
 from django.core.urlresolvers import reverse
@@ -433,6 +433,41 @@ class TestHiveserver2Api(object):
     assert_equal(jobs[0]['finished'], True)
 
 
+  def test_get_current_statement(self):
+    snippet = json.loads("""
+        {
+            "status": "running",
+            "database": "default",
+            "id": "d70d31ee-a62a-4854-b2b1-b852f6a390f5",
+            "result": {
+                "type": "table",
+                "handle": {
+                  "statement_id": 0,
+                  "statements_count": 1,
+                  "has_more_statements": false
+                },
+                "id": "ca11fcb1-11a5-f534-8200-050c8e1e57e3"
+            },
+            "statement": "%(statement)s",
+            "type": "hive",
+            "properties": {
+                "files": [],
+                "functions": [],
+                "settings": []
+            }
+        }
+      """ % {'statement': u"SELECT 'Привет', '你好';"}
+    )
+
+    statement = self.api._get_current_statement(MockDb(), snippet)
+
+    assert_equal('086ecec9a8b89b1b47cce358bdbb343be23b1f8b54ca76bc81927e27', statement['previous_statement_hash'])
+
+
+def MockDb():
+  def close_operation(handle): pass
+
+
 class TestHiveserver2ApiWithHadoop(BeeswaxSampleProvider):
 
   @classmethod
@@ -775,7 +810,7 @@ class TestHiveserver2ApiWithHadoop(BeeswaxSampleProvider):
       statement = "SELECT * FROM web_logs;"
       doc = self.create_query_document(owner=self.user, query_type='impala', statement=statement)
       notebook = Notebook(document=doc)
-      snippet = self.execute_and_wait(doc, snippet_idx=0, timeout=60.0, wait=2.0)
+      snippet = self.execute_and_wait(doc, snippet_idx=0, timeout=60.0, wait=5.0)
 
       self.client.post(reverse('notebook:fetch_result_data'),
                        {'notebook': notebook.get_json(), 'snippet': json.dumps(snippet), 'rows': 100, 'startOver': 'false'})
@@ -805,7 +840,7 @@ class TestHiveserver2ApiWithHadoop(BeeswaxSampleProvider):
       statement = "SELECT * FROM web_logs;"
       doc = self.create_query_document(owner=self.user, query_type='impala', statement=statement)
       notebook = Notebook(document=doc)
-      snippet = self.execute_and_wait(doc, snippet_idx=0, timeout=60.0, wait=2.0)
+      snippet = self.execute_and_wait(doc, snippet_idx=0, timeout=60.0, wait=5.0)
 
       self.client.post(reverse('notebook:fetch_result_data'),
                        {'notebook': notebook.get_json(), 'snippet': json.dumps(snippet), 'rows': 100, 'startOver': 'false'})

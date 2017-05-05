@@ -109,12 +109,18 @@ var HueColors = {
     return _bands;
   },
 
-
-  getCUIChartColors: function () {
-    var normalizedColors = {}, i;
+  getNormalizedColors: function () {
+    var normalizedColors = {};
     this.CUIScaleColors.forEach(function (scaleDef) {
       normalizedColors[scaleDef.name] = scaleDef.colors;
     });
+    return normalizedColors;
+  },
+
+  getCUIChartColors: function () {
+    var i;
+
+    var normalizedColors = this.getNormalizedColors();
 
     // optimal visual sequence by contrasting colors
     var sequence = ['blue', 'lime', 'blue-gray', 'pink', 'steel', 'purple', 'teal', 'red', 'orange', 'green'],
@@ -145,7 +151,7 @@ var HueColors = {
   },
 
   d3Scale: function () {
-    return d3.scale.category20().range().concat(d3.scale.category20b().range().concat(d3.scale.category20c().range()));
+    return d3v3.scale.category20().range().concat(d3v3.scale.category20b().range().concat(d3v3.scale.category20c().range()));
   },
   cuiD3Scale: function (swatch) {
     var colors = this.getCUIChartColors().map(function (c) {
@@ -162,7 +168,7 @@ var HueColors = {
   },
   LIGHT_BLUE: "#DBE8F1",
   BLUE: "#87BAD5",
-  DARK_BLUE: "#338BB8",
+  DARK_BLUE: "#0B7FAD",
   DARKER_BLUE: "#205875",
   PURPLE: "#C0B1E9",
   GRAY: "#666666",

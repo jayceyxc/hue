@@ -14,18 +14,21 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
-from desktop.views import commonheader, commonfooter
 from django.utils.translation import ugettext as _
+
+from desktop.views import commonheader, commonfooter
+
 from useradmin.password_policy import is_password_policy_enabled, get_password_hint
 from useradmin.views import is_user_locked_out
 %>
 
 <%namespace name="layout" file="layout.mako" />
-
+%if not is_embeddable:
 ${ commonheader(_('Hue Users'), "useradmin", user, request) | n,unicode }
+%endif
 ${ layout.menubar(section='users') }
 
-<div class="container-fluid">
+<div id="editUserComponents" class="container-fluid">
   <div class="card card-small">
     % if username:
       <h1 class="card-heading simple">${_('Hue Users - Edit user: %(username)s') % dict(username=username)}</h1>
@@ -34,6 +37,7 @@ ${ layout.menubar(section='users') }
     % endif
 
     <br/>
+
     <form id="editForm" method="POST" class="form form-horizontal" autocomplete="off">
     ${ csrf_token(request) | n,unicode }
     <div id="properties" class="section">
@@ -95,10 +99,10 @@ ${ layout.menubar(section='users') }
         </div>
       % endif
       </div>
-      <div class="form-actions">
-        <a id="backBtn" class="btn disabled">${ _('Back') }</a>
-        <a id="nextBtn" class="btn btn-primary disable-feedback">${ _('Next') }</a>
 
+      <div class="form-actions">
+        <a class="backBtn btn disabled">${ _('Back') }</a>
+        <a class="nextBtn btn btn-primary disable-feedback">${ _('Next') }</a>
       % if username:
         <input type="submit" class="btn btn-primary" value="${_('Update user')}"/>
       % else:
@@ -109,12 +113,17 @@ ${ layout.menubar(section='users') }
   </div>
 </div>
 
-<script src="${ static('desktop/ext/js/routie-0.3.0.min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/js/hue.routie.js') }" type="text/javascript" charset="utf-8"></script>
+<script>
+  routie.setPathname('/useradmin');
+</script>
 
-<script type="text/javascript" charset="utf-8">
+<script type="text/javascript">
 
 $(document).ready(function(){
-  $("#id_groups").jHueSelector({
+  var $editUserComponents = $('#editUserComponents');
+
+  $editUserComponents.find("#id_groups").jHueSelector({
     selectAllLabel: "${_('Select all')}",
     searchPlaceholder: "${_('Search')}",
     noChoicesFound: "${_('No groups found.')} <a href='${url('useradmin.views.edit_group')}'>${_('Create a new group now')} &raquo;</a>",
@@ -143,26 +152,26 @@ $(document).ready(function(){
   function showStep(step) {
     currentStep = step;
     if (step != "step1") {
-      $("#backBtn").removeClass("disabled");
+      $editUserComponents.find(".backBtn").removeClass("disabled");
     } else {
-      $("#backBtn").addClass("disabled");
+      $editUserComponents.find(".backBtn").addClass("disabled");
     }
 
-    if (step != $(".stepDetails:last").attr("id")) {
-      $("#nextBtn").removeClass("disabled");
+    if (step != $editUserComponents.find(".stepDetails:last").attr("id")) {
+      $editUserComponents.find(".nextBtn").removeClass("disabled");
     } else {
-      $("#nextBtn").addClass("disabled");
+      $editUserComponents.find(".nextBtn").addClass("disabled");
     }
 
-    $("a.step").parent().removeClass("active");
-    $("a.step[href=#" + step + "]").parent().addClass("active");
-    $(".stepDetails").hide();
-    $("#" + step).show();
+    $editUserComponents.find("a.step").parent().removeClass("active");
+    $editUserComponents.find("a.step[href=#" + step + "]").parent().addClass("active");
+    $editUserComponents.find(".stepDetails").hide();
+    $editUserComponents.find("#" + step).show();
   }
 
   function validateStep(step) {
     var proceed = true;
-    $("#" + step).find("[validate=true]").each(function () {
+    $editUserComponents.find("#" + step).find("[validate=true]").each(function () {
       if ($(this).val().trim() == "") {
         proceed = false;
         routie(step);
@@ -174,26 +183,26 @@ $(document).ready(function(){
     return proceed;
   }
 
-  $("#backBtn").click(function () {
+  $editUserComponents.find(".backBtn").click(function () {
     var nextStep = (currentStep.substr(4) * 1 - 1);
     if (nextStep >= 1) {
       routie("step" + nextStep);
     }
   });
 
-  $("#nextBtn").click(function () {
+  $editUserComponents.find(".nextBtn").click(function () {
     var nextStep = (currentStep.substr(4) * 1 + 1);
     if (nextStep <= $(".step").length) {
       routie("step" + nextStep);
     }
   });
 
-  $("[validate=true]").change(function () {
+  $editUserComponents.find("[validate=true]").change(function () {
     $(this).parents(".control-group").removeClass("error");
     $(this).parent().find(".help-inline").remove();
   });
 
-  $("#editForm").on("submit", function(){
+  $editUserComponents.find("#editForm").on("submit", function(){
     if (validateStep("step1") && validateStep("step2")) {
       return true;
     }
@@ -204,4 +213,6 @@ $(document).ready(function(){
 
 ${layout.commons()}
 
+%if not is_embeddable:
 ${ commonfooter(None, messages) | n,unicode }
+%endif

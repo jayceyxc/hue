@@ -30,12 +30,12 @@ ko.bindingHandlers.droppable = {
 };
 
 
-function magicLayout(vm) {
-  loadLayout(vm, vm.initial.layout);
-  $(document).trigger("magicLayout");
+function magicWorkflowLayout(vm) {
+  loadWorkflowLayout(vm, vm.initial.layout);
+  $(document).trigger("magicWorkflowLayout");
 }
 
-function loadColumns(viewModel, json_layout) {
+function loadWorkflowColumns(viewModel, json_layout) {
   var _columns = [];
 
   $(json_layout).each(function (cnt, json_col) {
@@ -55,7 +55,7 @@ function loadColumns(viewModel, json_layout) {
         });
         row.addWidget(_w);
       });
-      row.columns(loadColumns(viewModel, json_row.columns));
+      row.columns(loadWorkflowColumns(viewModel, json_row.columns));
       _rows.push(row);
     });
     var column = new ExtendedColumn(json_col.size, _rows);
@@ -64,8 +64,8 @@ function loadColumns(viewModel, json_layout) {
   return _columns;
 }
 
-function loadLayout(viewModel, json_layout) {
-  var _cols = loadColumns(viewModel, json_layout);
+function loadWorkflowLayout(viewModel, json_layout) {
+  var _cols = loadWorkflowColumns(viewModel, json_layout);
   viewModel.oozieColumns(_cols);
 }
 
@@ -174,7 +174,7 @@ var Node = function (node, vm) {
     });
   }
 
-  if ((type == 'hive-document-widget' || type == 'spark-document-widget') && typeof self.properties.uuid != "undefined") {
+  if ((type == 'hive-document-widget' || type == 'impala-document-widget' || type == 'spark-document-widget') && typeof self.properties.uuid != "undefined") {
     self.properties.uuid.subscribe(function () {
       self.actionParametersFetched(false);
       self.fetch_parameters();
@@ -286,10 +286,9 @@ var Workflow = function (vm, workflow) {
             callback(widget, sourceNode);
           }
         }
-      },
-      async: false
+      }
     });
-    logGA('new_node/' + widget.widgetType());
+    hueAnalytics.log('oozie/editor/workflow', 'new_node/' + widget.widgetType());
   };
 
   self.addNode = function (widget, copiedNode) {
@@ -392,7 +391,7 @@ var Workflow = function (vm, workflow) {
     }).fail(function (xhr, textStatus, errorThrown) {
       $(document).trigger("error", xhr.responseText);
     });
-    logGA('add_node');
+    hueAnalytics.log('oozie/editor/workflow', 'add_node');
   };
 
   self.removeNode = function (node_id) {
@@ -450,7 +449,7 @@ var Workflow = function (vm, workflow) {
     else {
       self.nodes.remove(node);
     }
-    logGA('remove_node');
+    hueAnalytics.log('oozie/editor/workflow', 'remove_node');
   };
 
   self.moveNode = function (widget) {
@@ -484,12 +483,23 @@ var Workflow = function (vm, workflow) {
     });
     return _node;
   };
+
+  self.hasKillNode = ko.pureComputed(function() {
+    return $.grep(self.nodes(), function(node) {
+      return node.type() == 'kill-widget';
+    }).length > 0;
+  });
 }
 
 var WorkflowEditorViewModel = function (layout_json, workflow_json, credentials_json, workflow_properties_json, subworkflows_json, can_edit_json, history_json) {
   var self = this;
 
   self.isNested = ko.observable(true);
+
+  self.currentDraggableSection = ko.observable();
+  self.currentDraggableSection.subscribe(function (newVal) {
+    huePubSub.publish('oozie.draggable.section.change', newVal);
+  });
 
   self.canEdit = ko.mapping.fromJS(can_edit_json);
   self.isEditing = ko.observable(workflow_json.id == null);
@@ -516,7 +526,7 @@ var WorkflowEditorViewModel = function (layout_json, workflow_json, credentials_
   self.inited = ko.observable(self.oozieColumns().length > 0);
   self.init = function (callback) {
     self.workflow_properties = ko.mapping.fromJS(workflow_properties_json);
-    loadLayout(self, layout_json);
+    loadWorkflowLayout(self, layout_json);
     self.workflow.loadNodes(workflow_json);
   };
 
@@ -1172,7 +1182,7 @@ var WorkflowEditorViewModel = function (layout_json, workflow_json, credentials_
             window.location.replace(data.url);
           }
           if (self.workflow.id() == null) {
-            shareViewModel.setDocUuid(data.uuid);
+            shareViewModel.setDocUuid(data.doc_uuid);
           }
           self.workflow.id(data.id);
           $(document).trigger("info", data.message);
@@ -1189,7 +1199,7 @@ var WorkflowEditorViewModel = function (layout_json, workflow_json, credentials_
       }).always(function () {
         self.isSaving(false);
       });
-    logGA('save');
+    hueAnalytics.log('oozie/editor/workflow', 'save');
     }
   };
 
@@ -1230,8 +1240,13 @@ var WorkflowEditorViewModel = function (layout_json, workflow_json, credentials_
   };
 
   self.schedule = function () {
-    logGA('schedule');
-    window.location.replace('/oozie/editor/coordinator/new/?workflow=' + self.workflow.uuid());
+    hueAnalytics.log('oozie/editor/workflow', 'schedule');
+    if (IS_HUE_4) {
+      huePubSub.publish('open.link', '/oozie/editor/coordinator/new/?workflow=' + self.workflow.uuid());
+    }
+    else {
+      window.location.replace('/oozie/editor/coordinator/new/?workflow=' + self.workflow.uuid());
+    }
   };
 
   function bareWidgetBuilder(name, type) {
@@ -1245,6 +1260,7 @@ var WorkflowEditorViewModel = function (layout_json, workflow_json, credentials_
 
   self.draggableHiveAction = ko.observable(bareWidgetBuilder("Hive Script", "hive-widget"));
   self.draggableHive2Action = ko.observable(bareWidgetBuilder("HiveServer2 Script", "hive2-widget"));
+  self.draggableImpalaAction = ko.observable(bareWidgetBuilder("Impala Script", "impala-widget"));
   self.draggablePigAction = ko.observable(bareWidgetBuilder("Pig Script", "pig-widget"));
   self.draggableJavaAction = ko.observable(bareWidgetBuilder("Java program", "java-widget"));
   self.draggableMapReduceAction = ko.observable(bareWidgetBuilder("MapReduce job", "mapreduce-widget"));
@@ -1259,6 +1275,7 @@ var WorkflowEditorViewModel = function (layout_json, workflow_json, credentials_
   self.draggableSparkAction = ko.observable(bareWidgetBuilder("Spark", "spark-widget"));
   self.draggableGenericAction = ko.observable(bareWidgetBuilder("Generic", "generic-widget"));
   self.draggableHiveDocumentAction = ko.observable(bareWidgetBuilder("Hive", "hive-document-widget"));
+  self.draggableImpalaDocumentAction = ko.observable(bareWidgetBuilder("Impala", "impala-document-widget"));
   self.draggableJavaDocumentAction = ko.observable(bareWidgetBuilder("Java", "java-document-widget"));
   self.draggableSparkDocumentAction = ko.observable(bareWidgetBuilder("Spark", "spark-document-widget"));
   self.draggablePigDocumentAction = ko.observable(bareWidgetBuilder("Pig", "pig-document-widget"));
@@ -1278,12 +1295,6 @@ function getOtherSubworkflows(vm, workflows) {
     }
   });
   return _cleanedSubworkflows;
-}
-
-function logGA(page) {
-  if (typeof trackOnGA == 'function') {
-    trackOnGA('oozie/editor/workflow/' + page);
-  }
 }
 
 var ExtendedColumn = function (size, rows) {
@@ -1361,6 +1372,7 @@ var ExtendedWidget = function (params) {
   self.progress = ko.observable(0);
   self.actionURL = ko.observable("");
   self.logsURL = ko.observable("");
+  self.externalId = ko.observable("");
   self.externalIdUrl = ko.observable("");
   return self;
 }

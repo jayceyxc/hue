@@ -66,7 +66,10 @@ class Field(object):
       'length': 100,
       'keyType': 'string',
       'isPartition': False,
-      'comment': ''
+      'partitionValue': '',
+      'comment': '',
+      'scale': 0,
+      'precision': 10
     }
 
 FIELD_TYPES = [

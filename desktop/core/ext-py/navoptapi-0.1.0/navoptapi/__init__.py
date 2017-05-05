@@ -17,7 +17,12 @@
 import os
 import re
 
-VERSION = "0.1.0"
+from ._version import get_versions
+
+__version__ = get_versions()['version']
+del get_versions
+
+VERSION = __version__
 
 CCSCLI_ROOT = os.path.dirname(os.path.abspath(__file__))
 

@@ -21,23 +21,31 @@ import json
 from django.utils.translation import ugettext as _
 
 from desktop.lib.django_util import JsonResponse, render
+from desktop.lib.exceptions_renderable import PopupException
 
 from indexer.controller2 import IndexController
-from indexer.management.commands import indexer_setup
 from indexer.fields import FIELD_TYPES, Field
-from indexer.operations import OPERATORS
 from indexer.file_format import get_file_indexable_format_types
+from indexer.management.commands import indexer_setup
+from indexer.operations import OPERATORS
+
 
 LOG = logging.getLogger(__name__)
 
 
 def collections(request, is_redirect=False):
+  if not request.user.has_hue_permission(action="access", app='search'):
+    raise PopupException(_('Missing permission.'), error_code=403)
+
   return render('collections.mako', request, {
     'is_embeddable': request.GET.get('is_embeddable', False),
   })
 
 
 def indexes(request):
+  if not request.user.has_hue_permission(action="access", app='search'):
+    raise PopupException(_('Missing permission.'), error_code=403)
+
   searcher = IndexController(request.user)
   indexes = searcher.get_indexes()
 
@@ -50,6 +58,9 @@ def indexes(request):
 
 
 def indexer(request):
+  if not request.user.has_hue_permission(action="access", app='search'):
+    raise PopupException(_('Missing permission.'), error_code=403)
+
   searcher = IndexController(request.user)
   indexes = searcher.get_indexes()
 
@@ -65,16 +76,20 @@ def indexer(request):
       'default_field_type' : json.dumps(Field().to_dict())
   })
 
+
 HIVE_PRIMITIVE_TYPES = \
     ("string", "tinyint", "smallint", "int", "bigint", "boolean",
-      "float", "double", "timestamp", "date", "char", "varchar")
+      "float", "double", "decimal", "timestamp", "date", "char", "varchar")
 HIVE_TYPES = HIVE_PRIMITIVE_TYPES + ("array", "map", "struct")
 
 
 def importer(request):
   prefill = {
+    'source_type': '',
+    'target_type': '',
+    'target_path': ''
   }
-  
+
   return _importer(request, prefill)
 
 
@@ -82,9 +97,9 @@ def importer_prefill(request, source_type, target_type, target_path=None):
   prefill = {
     'source_type': source_type,
     'target_type': target_type,
-    'target_path': target_path
+    'target_path': target_path or ''
   }
-  
+
   return _importer(request, prefill)
 
 

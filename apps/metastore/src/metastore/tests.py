@@ -31,7 +31,7 @@ from desktop.lib.django_test_util import make_logged_in_client, assert_equal_mod
 from desktop.lib.test_utils import add_permission, grant_access
 from hadoop.pseudo_hdfs4 import is_live_cluster
 from metastore import parser
-from useradmin.models import HuePermission, GroupPermission, group_has_permission
+from useradmin.models import HuePermission, GroupPermission
 
 from beeswax.conf import LIST_PARTITIONS_LIMIT
 from beeswax.views import collapse_whitespace
@@ -169,9 +169,9 @@ class TestMetastoreWithHadoop(BeeswaxSampleProvider):
     data = json.loads(response.content)
     partition_columns = [col for cols in data['partition_values_json'] for col in cols['columns']]
     assert_true("baz_one" in partition_columns)
-    assert_true("boom_two" in partition_columns)
+    assert_true('12345' in partition_columns, partition_columns)
     assert_true("baz_foo" in partition_columns)
-    assert_true("boom_bar" in partition_columns)
+    assert_true('67890' in partition_columns)
 
     # Not partitioned
     response = self.client.get("/metastore/table/%s/test/partitions" % self.db_name, follow=True)
@@ -199,7 +199,7 @@ class TestMetastoreWithHadoop(BeeswaxSampleProvider):
     if not is_live_cluster():
       raise SkipTest
 
-    partition_spec = "baz='baz_one',boom='boom_two'"
+    partition_spec = "baz='baz_one',boom=12345"
     response = self.client.get("/metastore/table/%s/test_partitions/partitions/%s/read" % (self.db_name, partition_spec), follow=True)
     response = self.client.get(reverse("beeswax:api_watch_query_refresh_json", kwargs={'id': response.context['query'].id}), follow=True)
     response = wait_for_query_to_finish(self.client, response, max=30.0)
@@ -207,18 +207,18 @@ class TestMetastoreWithHadoop(BeeswaxSampleProvider):
     assert_true(len(results['results']) > 0, results)
 
   def test_browse_partition(self):
-    partition_spec = "baz='baz_one',boom='boom_two'"
+    partition_spec = "baz='baz_one',boom=12345"
     response = self.client.get("/metastore/table/%s/test_partitions/partitions/%s/browse" % (self.db_name, partition_spec), follow=True)
     if is_live_cluster():
-      path = '/user/hive/warehouse/%s.db/test_partitions/baz=baz_one/boom=boom_two' % self.db_name
+      path = '/user/hive/warehouse/%s.db/test_partitions/baz=baz_one/boom=12345' % self.db_name
     else:
-      path = '/user/hive/warehouse/test_partitions/baz=baz_one/boom=boom_two'
+      path = '/user/hive/warehouse/test_partitions/baz=baz_one/boom=12345'
     filebrowser_path = urllib.unquote(reverse("filebrowser.views.view", kwargs={'path': path}))
     assert_equal(response.request['PATH_INFO'], filebrowser_path)
 
   def test_drop_partition(self):
     # Create partition first
-    partition_spec = "baz='baz_drop',boom='boom_drop'"
+    partition_spec = "baz='baz_drop',boom=54321"
     hql = 'ALTER TABLE `%s`.`test_partitions` ADD IF NOT EXISTS PARTITION (%s);' % (self.db_name, partition_spec)
     resp = _make_query(self.client, hql, database=self.db_name)
     wait_for_query_to_finish(self.client, resp, max=30.0)
@@ -313,11 +313,15 @@ class TestMetastoreWithHadoop(BeeswaxSampleProvider):
     resp = self.client.get("/metastore/table/%s/test/load" % self.db_name, follow=True)
     assert_true('Path' in resp.content)
 
-    data_path = '%(prefix)s/tmp/foo' % {'prefix': self.cluster.fs_prefix}
+    data_dir = '%(prefix)s/tmp' % {'prefix': self.cluster.fs_prefix}
+    data_path = data_dir + '/foo'
+    self.cluster.fs.mkdir(data_dir)
+    self.cluster.fs.create(data_path, data='123')
 
     # Try the submission
-    self.client.post("/metastore/table/%s/test/load" % self.db_name, {'path': data_path, 'overwrite': True}, follow=True)
-    query = QueryHistory.objects.latest('id')
+    response = self.client.post("/metastore/table/%s/test/load" % self.db_name, {'path': data_path, 'overwrite': True}, follow=True)
+    data = json.loads(response.content)
+    query = QueryHistory.objects.get(id=data['query_history_id'])
 
     assert_equal_mod_whitespace("LOAD DATA INPATH '%(data_path)s' OVERWRITE INTO TABLE `%(db)s`.`test`" % {'data_path': data_path, 'db': self.db_name}, query.query)
 
@@ -326,9 +330,9 @@ class TestMetastoreWithHadoop(BeeswaxSampleProvider):
     assert_equal_mod_whitespace("LOAD DATA INPATH '%(data_path)s' INTO TABLE `%(db)s`.`test`" % {'data_path': data_path, 'db': self.db_name}, query.query)
 
     # Try it with partitions
-    resp = self.client.post("/metastore/table/%s/test_partitions/load" % self.db_name, {'path': data_path, 'partition_0': "alpha", 'partition_1': "beta"}, follow=True)
+    resp = self.client.post("/metastore/table/%s/test_partitions/load" % self.db_name, {'path': data_path, 'partition_0': "alpha", 'partition_1': 12345}, follow=True)
     query = QueryHistory.objects.latest('id')
-    assert_equal_mod_whitespace(query.query, "LOAD DATA INPATH '%(data_path)s' INTO TABLE `%(db)s`.`test_partitions` PARTITION (baz='alpha', boom='beta')" % {'data_path': data_path, 'db': self.db_name})
+    assert_equal_mod_whitespace(query.query, "LOAD DATA INPATH '%(data_path)s' INTO TABLE `%(db)s`.`test_partitions` PARTITION (baz='alpha', boom='12345')" % {'data_path': data_path, 'db': self.db_name})
 
 
   def test_has_write_access_frontend(self):

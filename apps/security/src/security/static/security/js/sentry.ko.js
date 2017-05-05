@@ -225,7 +225,7 @@ var Role = function (vm, role) {
   self.showEditGroups = ko.observable(false);
   self.isEditing = ko.observable(false);
   self.isValid = ko.computed(function () {
-    return $.grep(self.privileges(), function (privilege) {
+    return self.name().length > 0 && $.grep(self.privileges(), function (privilege) {
       return privilege.path() === '';
     }).length === 0;
   });
@@ -1405,9 +1405,3 @@ var SentryViewModel = function (initial) {
     $(document).trigger("show.mainSection");
   }
 };
-
-function logGA(page) {
-  if (typeof trackOnGA == 'function') {
-    trackOnGA('sentry/' + page);
-  }
-}

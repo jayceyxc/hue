@@ -31,9 +31,9 @@ from desktop.lib.conf import BoundConfig
 from desktop.lib.i18n import force_unicode
 from desktop.lib.rest.http_client import HttpClient, RestException
 from desktop.lib.rest import resource
+from dashboard.facet_builder import _compute_range_facet
 
 from search.conf import EMPTY_QUERY, SECURITY_ENABLED
-from search.api import _compute_range_facet
 
 from libsolr.conf import SSL_CERT_CA_VERIFY
 
@@ -146,7 +146,6 @@ class SolrApi(object):
               'mincount': int(facet['properties']['mincount']),
               'sort': {'count': facet['properties']['sort']},
           }
-          print facet
 
           if facet['properties']['domain'].get('blockParent') or facet['properties']['domain'].get('blockChildren'):
             _f['domain'] = {}
@@ -164,7 +163,7 @@ class SolrApi(object):
             })
             if timeFilter and timeFilter['time_field'] == facet['field'] and (facet['id'] not in timeFilter['time_filter_overrides'] or facet['widgetType'] != 'bucket-widget'):
               _f.update(self._get_time_filter_query(timeFilter, facet))
-          else:            
+          else:
             _f.update({
                 'type': 'terms',
                 'field': facet['field'],
@@ -172,7 +171,7 @@ class SolrApi(object):
                 'offset': 0,
                 'numBuckets': True,
                 'allBuckets': True,
-                'prefix': ''
+                #'prefix': '' # Forbidden on numeric fields
             })
             if facet['properties']['canRange'] and not facet['properties']['isDate']:
               del _f['mincount'] # Numeric fields do not support
@@ -216,18 +215,8 @@ class SolrApi(object):
 
     params += self._get_fq(collection, query)
 
-    if collection['template']['fieldsSelected'] and collection['template']['isGridLayout']:
-      fields = set(collection['template']['fieldsSelected'] + [collection['idField']] if collection['idField'] else [])
-      # Add field if needed
-      if collection['template']['leafletmap'].get('latitudeField'):
-        fields.add(collection['template']['leafletmap']['latitudeField'])
-      if collection['template']['leafletmap'].get('longitudeField'):
-        fields.add(collection['template']['leafletmap']['longitudeField'])
-      if collection['template']['leafletmap'].get('labelField'):
-        fields.add(collection['template']['leafletmap']['labelField'])
-      fl = urllib.unquote(utf_quoter(','.join(list(fields))))
-    else:
-      fl = '*'
+    from dashboard.models import Collection2
+    fl = urllib.unquote(utf_quoter(','.join(Collection2.get_field_list(collection))))
 
     nested_fields = self._get_nested_fields(collection)
     if nested_fields:
@@ -276,7 +265,7 @@ class SolrApi(object):
           'mincount': int(facet['mincount']),
           'numBuckets': True,
           'allBuckets': True,
-          'prefix': ''
+          #'prefix': '' # Forbidden on numeric fields
       }
       if widget['widgetType'] == 'tree2-widget' and facets[-1]['aggregate']['function'] != 'count':
         _f['subcount'] = self._get_aggregate_function(facets[-1])
@@ -615,12 +604,13 @@ class SolrApi(object):
       raise PopupException(e, title=_('Error while accessing Solr'))
 
   def get(self, core, doc_id):
+    collection_name = core['name']
     try:
       params = self._get_params() + (
           ('id', doc_id),
           ('wt', 'json'),
       )
-      response = self._root.get('%(core)s/get' % {'core': core}, params=params)
+      response = self._root.get('%(core)s/get' % {'core': collection_name}, params=params)
       return self._get_json(response)
     except RestException, e:
       raise PopupException(e, title=_('Error while accessing Solr'))
@@ -663,92 +653,6 @@ class SolrApi(object):
 
   def _get_range_borders(self, collection, query):
     props = {}
-    GAPS = {
-        '5MINUTES': {
-            'histogram-widget': {'coeff': '+3', 'unit': 'SECONDS'}, # ~100 slots
-            'timeline-widget': {'coeff': '+3', 'unit': 'SECONDS'}, # ~100 slots
-            'bucket-widget': {'coeff': '+3', 'unit': 'SECONDS'}, # ~100 slots
-            'bar-widget': {'coeff': '+3', 'unit': 'SECONDS'}, # ~100 slots
-            'facet-widget': {'coeff': '+1', 'unit': 'MINUTES'}, # ~10 slots
-        },
-        '30MINUTES': {
-            'histogram-widget': {'coeff': '+20', 'unit': 'SECONDS'},
-            'timeline-widget': {'coeff': '+20', 'unit': 'SECONDS'},
-            'bucket-widget': {'coeff': '+20', 'unit': 'SECONDS'},
-            'bar-widget': {'coeff': '+20', 'unit': 'SECONDS'},
-            'facet-widget': {'coeff': '+5', 'unit': 'MINUTES'},
-        },
-        '1HOURS': {
-            'histogram-widget': {'coeff': '+30', 'unit': 'SECONDS'},
-            'timeline-widget': {'coeff': '+30', 'unit': 'SECONDS'},
-            'bucket-widget': {'coeff': '+30', 'unit': 'SECONDS'},
-            'bar-widget': {'coeff': '+30', 'unit': 'SECONDS'},
-            'facet-widget': {'coeff': '+10', 'unit': 'MINUTES'},
-        },
-        '12HOURS': {
-            'histogram-widget': {'coeff': '+7', 'unit': 'MINUTES'},
-            'timeline-widget': {'coeff': '+7', 'unit': 'MINUTES'},
-            'bucket-widget': {'coeff': '+7', 'unit': 'MINUTES'},
-            'bar-widget': {'coeff': '+7', 'unit': 'MINUTES'},
-            'facet-widget': {'coeff': '+1', 'unit': 'HOURS'},
-        },
-        '1DAYS': {
-            'histogram-widget': {'coeff': '+15', 'unit': 'MINUTES'},
-            'timeline-widget': {'coeff': '+15', 'unit': 'MINUTES'},
-            'bucket-widget': {'coeff': '+15', 'unit': 'MINUTES'},
-            'bar-widget': {'coeff': '+15', 'unit': 'MINUTES'},
-            'facet-widget': {'coeff': '+3', 'unit': 'HOURS'},
-        },
-        '2DAYS': {
-            'histogram-widget': {'coeff': '+30', 'unit': 'MINUTES'},
-            'timeline-widget': {'coeff': '+30', 'unit': 'MINUTES'},
-            'bucket-widget': {'coeff': '+30', 'unit': 'MINUTES'},
-            'bar-widget': {'coeff': '+30', 'unit': 'MINUTES'},
-            'facet-widget': {'coeff': '+6', 'unit': 'HOURS'},
-        },
-        '7DAYS': {
-            'histogram-widget': {'coeff': '+3', 'unit': 'HOURS'},
-            'timeline-widget': {'coeff': '+3', 'unit': 'HOURS'},
-            'bucket-widget': {'coeff': '+3', 'unit': 'HOURS'},
-            'bar-widget': {'coeff': '+3', 'unit': 'HOURS'},
-            'facet-widget': {'coeff': '+1', 'unit': 'DAYS'},
-        },
-        '1MONTHS': {
-            'histogram-widget': {'coeff': '+12', 'unit': 'HOURS'},
-            'timeline-widget': {'coeff': '+12', 'unit': 'HOURS'},
-            'bucket-widget': {'coeff': '+12', 'unit': 'HOURS'},
-            'bar-widget': {'coeff': '+12', 'unit': 'HOURS'},
-            'facet-widget': {'coeff': '+5', 'unit': 'DAYS'},
-        },
-        '3MONTHS': {
-            'histogram-widget': {'coeff': '+1', 'unit': 'DAYS'},
-            'timeline-widget': {'coeff': '+1', 'unit': 'DAYS'},
-            'bucket-widget': {'coeff': '+1', 'unit': 'DAYS'},
-            'bar-widget': {'coeff': '+1', 'unit': 'DAYS'},
-            'facet-widget': {'coeff': '+30', 'unit': 'DAYS'},
-        },
-        '1YEARS': {
-            'histogram-widget': {'coeff': '+3', 'unit': 'DAYS'},
-            'timeline-widget': {'coeff': '+3', 'unit': 'DAYS'},
-            'bucket-widget': {'coeff': '+3', 'unit': 'DAYS'},
-            'bar-widget': {'coeff': '+3', 'unit': 'DAYS'},
-            'facet-widget': {'coeff': '+12', 'unit': 'MONTHS'},
-        },
-        '2YEARS': {
-            'histogram-widget': {'coeff': '+7', 'unit': 'DAYS'},
-            'timeline-widget': {'coeff': '+7', 'unit': 'DAYS'},
-            'bucket-widget': {'coeff': '+7', 'unit': 'DAYS'},
-            'bar-widget': {'coeff': '+7', 'unit': 'DAYS'},
-            'facet-widget': {'coeff': '+3', 'unit': 'MONTHS'},
-        },
-        '10YEARS': {
-            'histogram-widget': {'coeff': '+1', 'unit': 'MONTHS'},
-            'timeline-widget': {'coeff': '+1', 'unit': 'MONTHS'},
-            'bucket-widget': {'coeff': '+1', 'unit': 'MONTHS'},
-            'bar-widget': {'coeff': '+1', 'unit': 'MONTHS'},
-            'facet-widget': {'coeff': '+1', 'unit': 'YEARS'},
-        }
-    }
 
     time_field = collection['timeFilter'].get('field')
 
@@ -905,3 +809,91 @@ class SolrApi(object):
       )
     response = self._root.post('%s/update' % collection_or_core_name, contenttype=content_type, params=params, data=data)
     return self._get_json(response)
+
+
+GAPS = {
+    '5MINUTES': {
+        'histogram-widget': {'coeff': '+3', 'unit': 'SECONDS'}, # ~100 slots
+        'timeline-widget': {'coeff': '+3', 'unit': 'SECONDS'}, # ~100 slots
+        'bucket-widget': {'coeff': '+3', 'unit': 'SECONDS'}, # ~100 slots
+        'bar-widget': {'coeff': '+3', 'unit': 'SECONDS'}, # ~100 slots
+        'facet-widget': {'coeff': '+1', 'unit': 'MINUTES'}, # ~10 slots
+    },
+    '30MINUTES': {
+        'histogram-widget': {'coeff': '+20', 'unit': 'SECONDS'},
+        'timeline-widget': {'coeff': '+20', 'unit': 'SECONDS'},
+        'bucket-widget': {'coeff': '+20', 'unit': 'SECONDS'},
+        'bar-widget': {'coeff': '+20', 'unit': 'SECONDS'},
+        'facet-widget': {'coeff': '+5', 'unit': 'MINUTES'},
+    },
+    '1HOURS': {
+        'histogram-widget': {'coeff': '+30', 'unit': 'SECONDS'},
+        'timeline-widget': {'coeff': '+30', 'unit': 'SECONDS'},
+        'bucket-widget': {'coeff': '+30', 'unit': 'SECONDS'},
+        'bar-widget': {'coeff': '+30', 'unit': 'SECONDS'},
+        'facet-widget': {'coeff': '+10', 'unit': 'MINUTES'},
+    },
+    '12HOURS': {
+        'histogram-widget': {'coeff': '+7', 'unit': 'MINUTES'},
+        'timeline-widget': {'coeff': '+7', 'unit': 'MINUTES'},
+        'bucket-widget': {'coeff': '+7', 'unit': 'MINUTES'},
+        'bar-widget': {'coeff': '+7', 'unit': 'MINUTES'},
+        'facet-widget': {'coeff': '+1', 'unit': 'HOURS'},
+    },
+    '1DAYS': {
+        'histogram-widget': {'coeff': '+15', 'unit': 'MINUTES'},
+        'timeline-widget': {'coeff': '+15', 'unit': 'MINUTES'},
+        'bucket-widget': {'coeff': '+15', 'unit': 'MINUTES'},
+        'bar-widget': {'coeff': '+15', 'unit': 'MINUTES'},
+        'facet-widget': {'coeff': '+3', 'unit': 'HOURS'},
+    },
+    '2DAYS': {
+        'histogram-widget': {'coeff': '+30', 'unit': 'MINUTES'},
+        'timeline-widget': {'coeff': '+30', 'unit': 'MINUTES'},
+        'bucket-widget': {'coeff': '+30', 'unit': 'MINUTES'},
+        'bar-widget': {'coeff': '+30', 'unit': 'MINUTES'},
+        'facet-widget': {'coeff': '+6', 'unit': 'HOURS'},
+    },
+    '7DAYS': {
+        'histogram-widget': {'coeff': '+3', 'unit': 'HOURS'},
+        'timeline-widget': {'coeff': '+3', 'unit': 'HOURS'},
+        'bucket-widget': {'coeff': '+3', 'unit': 'HOURS'},
+        'bar-widget': {'coeff': '+3', 'unit': 'HOURS'},
+        'facet-widget': {'coeff': '+1', 'unit': 'DAYS'},
+    },
+    '1MONTHS': {
+        'histogram-widget': {'coeff': '+12', 'unit': 'HOURS'},
+        'timeline-widget': {'coeff': '+12', 'unit': 'HOURS'},
+        'bucket-widget': {'coeff': '+12', 'unit': 'HOURS'},
+        'bar-widget': {'coeff': '+12', 'unit': 'HOURS'},
+        'facet-widget': {'coeff': '+5', 'unit': 'DAYS'},
+    },
+    '3MONTHS': {
+        'histogram-widget': {'coeff': '+1', 'unit': 'DAYS'},
+        'timeline-widget': {'coeff': '+1', 'unit': 'DAYS'},
+        'bucket-widget': {'coeff': '+1', 'unit': 'DAYS'},
+        'bar-widget': {'coeff': '+1', 'unit': 'DAYS'},
+        'facet-widget': {'coeff': '+30', 'unit': 'DAYS'},
+    },
+    '1YEARS': {
+        'histogram-widget': {'coeff': '+3', 'unit': 'DAYS'},
+        'timeline-widget': {'coeff': '+3', 'unit': 'DAYS'},
+        'bucket-widget': {'coeff': '+3', 'unit': 'DAYS'},
+        'bar-widget': {'coeff': '+3', 'unit': 'DAYS'},
+        'facet-widget': {'coeff': '+12', 'unit': 'MONTHS'},
+    },
+    '2YEARS': {
+        'histogram-widget': {'coeff': '+7', 'unit': 'DAYS'},
+        'timeline-widget': {'coeff': '+7', 'unit': 'DAYS'},
+        'bucket-widget': {'coeff': '+7', 'unit': 'DAYS'},
+        'bar-widget': {'coeff': '+7', 'unit': 'DAYS'},
+        'facet-widget': {'coeff': '+3', 'unit': 'MONTHS'},
+    },
+    '10YEARS': {
+        'histogram-widget': {'coeff': '+1', 'unit': 'MONTHS'},
+        'timeline-widget': {'coeff': '+1', 'unit': 'MONTHS'},
+        'bucket-widget': {'coeff': '+1', 'unit': 'MONTHS'},
+        'bar-widget': {'coeff': '+1', 'unit': 'MONTHS'},
+        'facet-widget': {'coeff': '+1', 'unit': 'YEARS'},
+    }
+}

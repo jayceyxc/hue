@@ -29,18 +29,20 @@ from django.views.decorators.http import require_http_methods
 from desktop.context_processors import get_app_name
 from desktop.lib.django_util import JsonResponse, render
 from desktop.lib.exceptions_renderable import PopupException
-from desktop.models import Document, Document2
-
-from metadata.conf import has_optimizer, has_navigator, get_optimizer_url, get_navigator_url
+from desktop.models import Document2
 
 from beeswax.design import hql_query
-from beeswax.models import SavedQuery, MetaInstall
+from beeswax.models import SavedQuery
 from beeswax.server import dbms
-from beeswax.server.dbms import get_query_server_config, QueryServerException
+from beeswax.server.dbms import get_query_server_config
 from filebrowser.views import location_to_url
+from metadata.conf import has_optimizer, has_navigator, get_optimizer_url, get_navigator_url
+from notebook.connectors.base import Notebook, QueryError
+from notebook.models import make_notebook
+
 from metastore.forms import LoadDataForm, DbForm
 from metastore.settings import DJANGO_APPS
-from notebook.connectors.base import Notebook
+
 
 
 LOG = logging.getLogger(__name__)
@@ -96,11 +98,24 @@ def drop_database(request):
     databases = request.POST.getlist('database_selection')
 
     try:
-      # Can't be simpler without an important refactoring
       design = SavedQuery.create_empty(app_name='beeswax', owner=request.user, data=hql_query('').dumps())
-      query_history = db.drop_databases(databases, design)
-      url = reverse('beeswax:watch_query_history', kwargs={'query_history_id': query_history.id}) + '?on_success_url=' + reverse('metastore:databases')
-      return redirect(url)
+
+      if request.POST.get('is_embeddable'):
+        sql = db.drop_databases(databases, design, generate_ddl_only=True)
+        job = make_notebook(
+            name='Execute and watch',
+            editor_type='hive',
+            statement=sql.strip(),
+            status='ready',
+            database=None,
+            on_success_url='assist.db.refresh',
+            is_task=True
+        )
+        return JsonResponse(job.execute(request))
+      else:
+        query_history = db.drop_databases(databases, design)
+        url = reverse('beeswax:watch_query_history', kwargs={'query_history_id': query_history.id}) + '?on_success_url=' + reverse('metastore:databases')
+        return redirect(url)
     except Exception, ex:
       error_message, log = dbms.expand_exception(ex, db)
       error = _("Failed to remove %(databases)s.  Error: %(error)s") % {'databases': ','.join(databases), 'error': error_message}
@@ -254,27 +269,11 @@ def describe_table(request, database, table):
       raise PopupException(_("Hive Error"), detail=e)
 
   if request.REQUEST.get("format", "html") == "json":
-    cols = []
-    extra_col_options = {}
-
-    if table.is_impala_only: # Expand columns information
-      query_server = get_query_server_config('impala')
-      db = dbms.get(request.user, query_server)
-
-      col_options = db.get_table_describe(database, table.name)
-      extra_col_options = dict([(col[0], dict(zip(col_options.cols(), col))) for col in col_options.rows()])
-
-    for col in table.cols:
-      col_props = {'name': col.name, 'type': col.type, 'comment': col.comment}
-      if extra_col_options:
-        col_props.update(extra_col_options.get(col.name, {}))
-      cols.append(col_props)
-
     return JsonResponse({
         'status': 0,
         'name': table.name,
         'partition_keys': [{'name': part.name, 'type': part.type} for part in table.partition_keys],
-        'cols': cols,
+        'cols': [{'name': col.name, 'type': col.type, 'comment': col.comment} for col in table.cols],
         'path_location': table.path_location,
         'hdfs_link': table.hdfs_link,
         'comment': table.comment,
@@ -288,7 +287,10 @@ def describe_table(request, database, table):
 
     partitions = None
     if app_name != 'impala' and table.partition_keys:
-      partitions = [_massage_partition(database, table, partition) for partition in db.get_partitions(database, table)]
+      try:
+        partitions = [_massage_partition(database, table, partition) for partition in db.get_partitions(database, table)]
+      except:
+        LOG.exception('Table partitions could not be retrieved')
 
     return render(renderable, request, {
       'breadcrumbs': [{
@@ -381,15 +383,29 @@ def drop_table(request, database):
   db = dbms.get(request.user)
 
   if request.method == 'POST':
-    tables = request.POST.getlist('table_selection')
-    tables_objects = [db.get_table(database, table) for table in tables]
-    skip_trash = request.POST.get('skip_trash') == 'on'
     try:
-      # Can't be simpler without an important refactoring
-      design = SavedQuery.create_empty(app_name='beeswax', owner=request.user, data=hql_query('').dumps())
-      query_history = db.drop_tables(database, tables_objects, design, skip_trash=skip_trash)
-      url = reverse('beeswax:watch_query_history', kwargs={'query_history_id': query_history.id}) + '?on_success_url=' + reverse('metastore:show_tables', kwargs={'database': database})
-      return redirect(url)
+      tables = request.POST.getlist('table_selection')
+      tables_objects = [db.get_table(database, table) for table in tables]
+      skip_trash = request.POST.get('skip_trash') == 'on'
+
+      if request.POST.get('is_embeddable'):
+        sql = db.drop_tables(database, tables_objects, design=None, skip_trash=skip_trash, generate_ddl_only=True)
+        job = make_notebook(
+            name='Execute and watch',
+            editor_type='hive',
+            statement=sql.strip(),
+            status='ready',
+            database=database,
+            on_success_url='assist.db.refresh',
+            is_task=True
+        )
+        return JsonResponse(job.execute(request))
+      else:
+        # Can't be simpler without an important refactoring
+        design = SavedQuery.create_empty(app_name='beeswax', owner=request.user, data=hql_query('').dumps())
+        query_history = db.drop_tables(database, tables_objects, design, skip_trash=skip_trash)
+        url = reverse('beeswax:watch_query_history', kwargs={'query_history_id': query_history.id}) + '?on_success_url=' + reverse('metastore:show_tables', kwargs={'database': database})
+        return redirect(url)
     except Exception, ex:
       error_message, log = dbms.expand_exception(ex, db)
       error = _("Failed to remove %(tables)s.  Error: %(error)s") % {'tables': ','.join(tables), 'error': error_message}
@@ -423,12 +439,34 @@ def load_table(request, database, table):
 
     if load_form.is_valid():
       on_success_url = reverse('metastore:describe_table', kwargs={'database': database, 'table': table.name})
+      generate_ddl_only = request.POST.get('is_embeddable', 'false') == 'true'
       try:
         design = SavedQuery.create_empty(app_name='beeswax', owner=request.user, data=hql_query('').dumps())
-        query_history = db.load_data(database, table, load_form, design)
-        url = reverse('beeswax:watch_query_history', kwargs={'query_history_id': query_history.id}) + '?on_success_url=' + on_success_url
-        response['status'] = 0
-        response['data'] = url
+        form_data = {
+          'path': load_form.cleaned_data['path'],
+          'overwrite': load_form.cleaned_data['overwrite'],
+          'partition_columns': [(column_name, load_form.cleaned_data[key]) for key, column_name in load_form.partition_columns.iteritems()],
+        }
+        query_history = db.load_data(database, table.name, form_data, design, generate_ddl_only=generate_ddl_only)
+        if generate_ddl_only:
+          job = make_notebook(
+            name='Execute and watch',
+            editor_type='hive',
+            statement=query_history.strip(),
+            status='ready',
+            database=database,
+            on_success_url='assist.db.refresh',
+            is_task=True
+          )
+          response = job.execute(request)
+        else:
+          url = reverse('beeswax:watch_query_history', kwargs={'query_history_id': query_history.id}) + '?on_success_url=' + on_success_url
+          response['status'] = 0
+          response['data'] = url
+          response['query_history_id'] = query_history.id
+      except QueryError, ex:
+        response['status'] = 1
+        response['data'] = _("Can't load the data: ") + ex.message
       except Exception, e:
         response['status'] = 1
         response['data'] = _("Can't load the data: ") + str(e)
@@ -466,7 +504,11 @@ def describe_partitions(request, database, table):
   else:
     partition_spec = ''
 
-  partitions = db.get_partitions(database, table_obj, partition_spec, reverse_sort=reverse_sort)
+  try:
+    partitions = db.get_partitions(database, table_obj, partition_spec, reverse_sort=reverse_sort)
+  except:
+    LOG.exception('Table partitions could not be retrieved')
+    partitions = []
   massaged_partitions = [_massage_partition(database, table_obj, partition) for partition in partitions]
 
   if request.method == "POST" or request.GET.get('format', 'html') == 'json':
@@ -512,6 +554,11 @@ def _massage_partition(database, table, partition):
         'database': database,
         'table': table.name,
         'partition_spec': urllib.quote(partition.partition_spec)
+    }),
+   'notebookUrl': reverse('notebook:browse', kwargs={
+        'database': database,
+        'table': table.name,
+        'partition_spec': urllib.quote(partition.partition_spec)
     })
   }
 
@@ -522,7 +569,10 @@ def browse_partition(request, database, table, partition_spec):
     decoded_spec = urllib.unquote(partition_spec)
     partition_table = db.describe_partition(database, table, decoded_spec)
     uri_path = location_to_url(partition_table.path_location)
-    return redirect(uri_path)
+    if request.REQUEST.get("format", "html") == "json":
+      return JsonResponse({'uri_path': uri_path})
+    else:
+      return redirect(uri_path)
   except Exception, e:
     raise PopupException(_('Cannot browse partition'), detail=e.message)
 
@@ -536,6 +586,7 @@ def read_partition(request, database, table, partition_spec):
     return redirect(url)
   except Exception, e:
     raise PopupException(_('Cannot read partition'), detail=e.message)
+
 
 @require_http_methods(["GET", "POST"])
 @check_has_write_access_permission

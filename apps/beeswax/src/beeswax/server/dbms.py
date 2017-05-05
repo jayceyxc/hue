@@ -177,6 +177,8 @@ class HiveServer2Dbms(object):
 
 
   def get_tables_meta(self, database='default', table_names='*', table_types=None):
+    database = database.lower() # Impala is case sensitive
+
     if self.server_name == 'beeswax':
       identifier = self.to_matching_wildcard(table_names)
     else:
@@ -188,6 +190,8 @@ class HiveServer2Dbms(object):
 
 
   def get_tables(self, database='default', table_names='*', table_types=None):
+    database = database.lower() # Impala is case sensitive
+
     if self.server_name == 'beeswax':
       identifier = self.to_matching_wildcard(table_names)
     else:
@@ -203,7 +207,6 @@ class HiveServer2Dbms(object):
       return self.client.get_table(database, table_name)
     except QueryServerException, e:
       LOG.debug("Seems like %s.%s could be a Kudu table" % (database, table_name))
-
       if 'java.lang.ClassNotFoundException' in e.message and [prop for prop in self.get_table_properties(database, table_name, property_name='storage_handler').rows() if 'KuduStorageHandler' in prop[0]]:
         query_server = get_query_server_config('impala')
         db = get(self.client.user, query_server)
@@ -239,7 +242,7 @@ class HiveServer2Dbms(object):
 
 
   def get_column(self, database, table_name, column_name):
-    table = self.client.get_table(database, table_name)
+    table = self.get_table(database, table_name)
     for col in table.cols:
       if col.name == column_name:
         return col
@@ -533,29 +536,30 @@ class HiveServer2Dbms(object):
     return self.execute_statement(hql)
 
 
-  def load_data(self, database, table, form, design):
+  def load_data(self, database, table, form_data, design, generate_ddl_only=False):
     hql = "LOAD DATA INPATH"
-    hql += " '%s'" % form.cleaned_data['path']
-    if form.cleaned_data['overwrite']:
+    hql += " '%(path)s'" % form_data
+    if form_data['overwrite']:
       hql += " OVERWRITE"
     hql += " INTO TABLE "
-    hql += "`%s`.`%s`" % (database, table.name,)
-    if form.partition_columns:
+    hql += "`%s`.`%s`" % (database, table)
+    if form_data['partition_columns']:
       hql += " PARTITION ("
-      vals = []
-      for key, column_name in form.partition_columns.iteritems():
-        vals.append("%s='%s'" % (column_name, form.cleaned_data[key]))
+      vals = ["%s='%s'" % (column_name, column_value) for column_name, column_value in form_data['partition_columns']]
       hql += ", ".join(vals)
       hql += ")"
 
-    query = hql_query(hql, database)
-    design.data = query.dumps()
-    design.save()
+    if generate_ddl_only:
+      return hql
+    else:
+      query = hql_query(hql, database)
+      design.data = query.dumps()
+      design.save()
 
-    return self.execute_query(query, design)
+      return self.execute_query(query, design)
 
 
-  def drop_tables(self, database, tables, design, skip_trash=False):
+  def drop_tables(self, database, tables, design, skip_trash=False, generate_ddl_only=False):
     hql = []
 
     for table in tables:
@@ -567,26 +571,34 @@ class HiveServer2Dbms(object):
         hql.append(drop_query)
 
     query = hql_query(';'.join(hql), database)
-    design.data = query.dumps()
-    design.save()
 
-    return self.execute_query(query, design)
+    if generate_ddl_only:
+      return query.hql_query
+    else:
+      design.data = query.dumps()
+      design.save()
+
+      return self.execute_query(query, design)
 
 
   def drop_database(self, database):
     return self.execute_statement("DROP DATABASE `%s`" % database)
 
 
-  def drop_databases(self, databases, design):
+  def drop_databases(self, databases, design, generate_ddl_only=False):
     hql = []
 
     for database in databases:
       hql.append("DROP DATABASE `%s` CASCADE" % database)
     query = hql_query(';'.join(hql), database)
-    design.data = query.dumps()
-    design.save()
 
-    return self.execute_query(query, design)
+    if generate_ddl_only:
+      return query.hql_query
+    else:
+      design.data = query.dumps()
+      design.save()
+
+      return self.execute_query(query, design)
 
   def _get_and_validate_select_query(self, design, query_history):
     query = design.get_query_statement(query_history.statement_number)
@@ -802,7 +814,7 @@ class HiveServer2Dbms(object):
     return self.client.get_partitions(db_name, table.name, partition_spec, max_parts=max_parts, reverse_sort=reverse_sort)
 
 
-  def get_partition(self, db_name, table_name, partition_spec):
+  def get_partition(self, db_name, table_name, partition_spec, generate_ddl_only=False):
     table = self.get_table(db_name, table_name)
     partitions = self.get_partitions(db_name, table, partition_spec=partition_spec)
 
@@ -814,7 +826,10 @@ class HiveServer2Dbms(object):
 
     hql = "SELECT * FROM `%s`.`%s` WHERE %s" % (db_name, table_name, partition_query)
 
-    return self.execute_statement(hql)
+    if generate_ddl_only:
+      return hql
+    else:
+      return self.execute_statement(hql)
 
 
   def describe_partition(self, db_name, table_name, partition_spec):
@@ -825,7 +840,7 @@ class HiveServer2Dbms(object):
     hql = []
 
     for partition_spec in partition_specs:
-        hql.append("ALTER TABLE `%s`.`%s` DROP IF EXISTS PARTITION (%s) PURGE" % (db_name, table_name, partition_spec))
+      hql.append("ALTER TABLE `%s`.`%s` DROP IF EXISTS PARTITION (%s) PURGE" % (db_name, table_name, partition_spec))
 
     query = hql_query(';'.join(hql), db_name)
     design.data = query.dumps()
@@ -842,6 +857,7 @@ class HiveServer2Dbms(object):
 
     if handle:
       result = self.fetch(handle, rows=5000)
+      self.close(handle)
 
     return result
 
@@ -859,6 +875,7 @@ class HiveServer2Dbms(object):
 
     if handle:
       result = self.fetch(handle, rows=5000)
+      self.close(handle)
 
     return result
 

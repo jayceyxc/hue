@@ -43,7 +43,7 @@ class MockSentryApiV1(object):
       # Column INSERT
       {'column': 'column_insert', 'grantOption': False, 'timestamp': 1478810635378, 'database': 'default', 'action': 'INSERT', 'scope': 'COLUMN', 'table': 'test_column', 'URI': '', 'server': 'server1'},
       # Column SELECT
-      {'column': 'column_select', 'grantOption': False, 'timestamp': 1478810590335, 'database': 'default', 'action': 'SELECT', 'scope': 'TABLE', 'table': 'test_column', 'URI': '', 'server': 'server1'},
+      {'column': 'column_select', 'grantOption': False, 'timestamp': 1478810590335, 'database': 'default', 'action': 'SELECT', 'scope': 'COLUMN', 'table': 'test_column', 'URI': '', 'server': 'server1'},
       # Table ALL
       {'column': '', 'grantOption': False, 'timestamp': 1478810513849, 'database': 'default', 'action': 'ALL', 'scope': 'TABLE', 'table': 'test_table_all', 'URI': '', 'server': 'server1'},
       # Table INSERT
@@ -144,7 +144,7 @@ class TestPrivilegeChecker(object):
           return None
 
       filtered_set = self.checker.filter_objects(objects=objectSet, action=action, key=test_key_fn)
-      assert_equal(expectedSet, filtered_set, filtered_set)
+      assert_equal(expectedSet, list(filtered_set), list(filtered_set))
 
 
   def test_columns_select(self):

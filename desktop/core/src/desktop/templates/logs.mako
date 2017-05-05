@@ -23,8 +23,9 @@ import re
 
 <%namespace name="actionbar" file="actionbar.mako" />
 <%namespace name="layout" file="about_layout.mako" />
-
+%if not is_embeddable:
 ${ commonheader(_('Server Logs'), "about", user, request) | n,unicode }
+%endif
 ${layout.menubar(section='log_view')}
 
 <style type="text/css">
@@ -43,16 +44,17 @@ ${layout.menubar(section='log_view')}
     background-color: #FFFF88;
   }
 
-  #logs {
+  #hue-logs {
     overflow: auto;
     background-color: #F5F5F5;
+    width: 100%;
   }
 
-  #logs pre:first-child {
+  #hue-logs pre:first-child {
     padding-top: 10px;
   }
 
-  #logs pre:last-child {
+  #hue-logs pre:last-child {
     padding-bottom: 10px;
   }
 
@@ -61,11 +63,11 @@ ${layout.menubar(section='log_view')}
   }
 </style>
 
-<div class="container-fluid">
+<div id="logsComponents" class="container-fluid">
   <div class="card card-small">
     <%actionbar:render>
       <%def name="search()">
-        <input type="text" class="input-xxlarge search-query" placeholder="${_('Search in the logs')}" value="${query}">
+        <input type="text" class="input-xlarge" id="hue-logs-search-query" placeholder="${_('Search in the logs')}" value="${query}">
       </%def>
       <%def name="creation()">
         <form class="form-inline">
@@ -87,7 +89,7 @@ ${layout.menubar(section='log_view')}
 
     <% log.reverse() %>
 
-    <div id="logs">
+    <div id="hue-logs">
         % for l in log:
           <pre>${smart_unicode(l, errors='ignore')}</pre>
         % endfor
@@ -130,11 +132,9 @@ ${layout.menubar(section='log_view')}
     };
   }
 
-  var viewModel;
-
   $(document).ready(function () {
-    viewModel = new LiveDebugging();
-    ko.applyBindings(viewModel, $(".action-main-bar")[0]);
+    var viewModel = new LiveDebugging();
+    ko.applyBindings(viewModel, $("#logsComponents")[0]);
 
     viewModel.getDebugLevel();
 
@@ -148,8 +148,8 @@ ${layout.menubar(section='log_view')}
       }, 200);
     });
 
-    $(".search-query").jHueDelayedInput(function(){
-      filterLogs($(".search-query").val());
+    $("#hue-logs-search-query").jHueDelayedInput(function(){
+      filterLogs($("#hue-logs-search-query").val());
     }, 500);
 
     if ("${query}" != "") {
@@ -157,7 +157,7 @@ ${layout.menubar(section='log_view')}
     }
 
     function resizeScrollingLogs() {
-      var _el = $("#logs");
+      var _el = $("#hue-logs");
       if (!$.browser.msie) {
         _el.css("overflow-y", "").css("height", "");
       }
@@ -171,25 +171,25 @@ ${layout.menubar(section='log_view')}
     }
 
     function filterLogs(query) {
-      $(".search-query").removeClass("notFound");
+      $("#hue-logs-search-query").removeClass("notFound");
       if ($.trim(query) == "") {
-        $("#logs").scrollTop(0);
+        $("#hue-logs").scrollTop(0);
         return false;
       }
       $("pre.highlighted").removeClass("highlighted");
       var found = false;
-      $("#logs pre").each(function () {
+      $("#hue-logs pre").each(function () {
         var _el = $(this);
         if (_el.text().toLowerCase().replace(/\s/g, "").indexOf(query.toLowerCase().replace(/\s/g, "")) > -1) {
           _el.addClass("highlighted");
-          $("#logs").scrollTop(_el.offset().top - $("#logs").position().top - 4);
+          $("#hue-logs").scrollTop(_el.offset().top - $("#hue-logs").position().top - 100);
           found = true;
           return false;
         }
       });
       if (!found) {
-        $(".search-query").addClass("notFound");
-        $("#logs").scrollTop(0);
+        $("#hue-logs-search-query").addClass("notFound");
+        $("#hue-logs").scrollTop(0);
       }
     }
 
@@ -204,4 +204,6 @@ ${layout.menubar(section='log_view')}
   });
 </script>
 
+%if not is_embeddable:
 ${ commonfooter(request, messages) | n,unicode }
+%endif

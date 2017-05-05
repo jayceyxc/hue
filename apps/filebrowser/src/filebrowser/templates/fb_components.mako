@@ -20,20 +20,20 @@ from django.utils.translation import ugettext as _
 from aws import get_client
 %>
 
-<%def name="breadcrumbs(path, breadcrumbs, from_listdir=False, is_embeddable=False)">
+<%def name="breadcrumbs(path, breadcrumbs, from_listdir=False)">
     % if from_listdir:
-      <ul class="nav nav-pills hueBreadcrumbBar">
+      <ul class="nav nav-pills hue-breadcrumbs-bar">
         %if path.lower().find('s3a://') == 0:
           <li style="padding-top: 10px">
-            <span class="homeLink" title="${ _('S3 region %s') % get_client()._region }">
+            <span class="breadcrumb-link homeLink" title="${ _('S3 region %s') % get_client()._region }">
               <i class="fa fa-fw fa-cubes"></i> ${ get_client()._region }
             </span>
           </li>
         %else:
-          <li><a class="pointer homeLink" data-bind="click: $root.openHome, attr:{'href': '${url('filebrowser.views.view', path=urlencode(path))}?default_to_home'}"><i class="fa fa-home"></i> ${_('Home')}</a></li>
+          <li><a class="pointer breadcrumb-link homeLink" data-bind="click: $root.openHome, attr:{'href': '${url('filebrowser.views.view', path=urlencode(path))}?default_to_home'}"><i class="fa fa-home"></i> ${_('Home')}</a></li>
         %endif
         <li>
-            <ul id="editBreadcrumb" class="hueBreadcrumb editable-breadcrumbs" data-bind="foreach: breadcrumbs" style="padding-right:40px; padding-top: 12px" title="${_('Edit path')}">
+            <ul id="editBreadcrumb" class="hue-breadcrumbs editable-breadcrumbs" data-bind="foreach: breadcrumbs" style="padding-right:40px; padding-top: 12px" title="${_('Edit path')}">
                 <li data-bind="visible: label.slice(-1) == '/'"><a data-bind="click: show, attr:{'href': '${url('filebrowser.views.view', path=urlencode(''))}' + url}"><span class="divider" data-bind="text: label"></span></a></li>
                 <li data-bind="visible: label.slice(-1) != '/'"><a data-bind="text: label, click: show, attr:{'href': '${url('filebrowser.views.view', path=urlencode(''))}' + url}"></a><span class="divider">/</span></li>
             </ul>
@@ -41,13 +41,13 @@ from aws import get_client
         </li>
         % if is_trash_enabled:
         <li class="pull-right">
-          <a class="pointer trashLink" data-bind="click: $root.openTrash, attr:{'href': '${url('filebrowser.views.view', path=urlencode(path))}?default_to_trash'}" title="${_('View trash')}">
+          <a class="pointer breadcrumb-link trashLink" data-bind="click: $root.openTrash, attr:{'href': '${url('filebrowser.views.view', path=urlencode(path))}?default_to_trash'}" title="${_('View trash')}">
             <i class="fa fa-trash-o"></i> ${_('Trash')}
           </a>
         </li>
         % endif
         <li class="pull-right">
-          <div class="dropdown history">
+          <div class="dropdown breadcrumb-link history">
             <a href="javascript:void(0)" class="historyLink dropdown-toggle" title="${_('View History')}" data-toggle="dropdown" id="historyDropdown">
               <i class="fa fa-caret-down"></i> ${_('History')}
             </a>
@@ -55,25 +55,10 @@ from aws import get_client
         </li>
       </ul>
     % else:
-      <ul class="nav nav-pills hueBreadcrumbBar">
-        %if is_embeddable:
-        <li><a href="javascript:void(0)" onclick="huePubSub.publish('open.link', '${url('filebrowser.views.view', path=urlencode(path))}?default_to_home')" class="homeLink"><i class="fa fa-home"></i> ${_('Home')}</a></li>
+      <ul class="nav nav-pills hue-breadcrumbs-bar">
+        <li><a href="${url('filebrowser.views.view', path=urlencode(path))}?default_to_home" class="breadcrumb-link homeLink"><i class="fa fa-home"></i> ${_('Home')}</a></li>
         <li>
-          <ul class="hueBreadcrumb" style="padding-right:40px; padding-top: 12px">
-          % for breadcrumb_item in breadcrumbs:
-            <% label, f_url = breadcrumb_item['label'], breadcrumb_item['url'] %>
-            %if label[-1] == '/':
-            <li><a href="javascript:void(0)" onclick="huePubSub.publish('open.fb.folder', '${f_url}')"><span class="divider">${label}</span></a></li>
-            %else:
-            <li><a href="javascript:void(0)" onclick="huePubSub.publish('open.fb.folder', '${f_url}')">${label}</a><span class="divider">/</span></li>
-            %endif
-          % endfor
-          </ul>
-        </li>
-        %else:
-        <li><a href="${url('filebrowser.views.view', path=urlencode(path))}?default_to_home" class="homeLink"><i class="fa fa-home"></i> ${_('Home')}</a></li>
-        <li>
-          <ul class="hueBreadcrumb" style="padding-right:40px; padding-top: 12px">
+          <ul class="hue-breadcrumbs" style="padding-right:40px; padding-top: 12px">
           % for breadcrumb_item in breadcrumbs:
             <% label, f_url = breadcrumb_item['label'], breadcrumb_item['url'] %>
             %if label[-1] == '/':
@@ -84,21 +69,20 @@ from aws import get_client
           % endfor
           </ul>
         </li>
-        %endif
       </ul>
     % endif
 </%def>
 
 
 <%def name="menubar()">
-  <div class="navbar navbar-inverse navbar-fixed-top nokids">
+  <div class="navbar hue-title-bar nokids">
       <div class="navbar-inner">
         <div class="container-fluid">
           <div class="nav-collapse">
             <ul class="nav">
-              <li class="currentApp">
+              <li class="app-header">
                 <a href="/${app_name}">
-                  <img src="${ static('filebrowser/art/icon_filebrowser_48.png') }" class="app-icon" />
+                  <img src="${ static('filebrowser/art/icon_filebrowser_48.png') }" class="app-icon" alt="${ _('File browser icon') }" />
                   ${ _('File Browser') }
                 </a>
               </li>

@@ -24,133 +24,11 @@ from metadata.conf import has_navigator
 %>
 
 <%def name="sqlContextPopover()">
-  <style>
-    .sql-context-popover-content {
-      -ms-flex: 1 1 100%;
-      flex: 1 1 100%;
-      display: -ms-flexbox;
-      display: flex;
-      -ms-flex-direction: column;
-      flex-direction: column;
-      padding: 0;
-      overflow: hidden;
-    }
-
-    .sql-context-tab-pane {
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      width: 100%;
-    }
-
-    .sql-context-tabs {
-      -ms-flex: 0 1 auto;
-      flex: 0 1 auto;
-      border-bottom: 1px solid #ebebeb;
-      margin-left: -1px;
-      margin-right: -1px;
-      padding-left: 15px;
-    }
-
-    .sql-context-tab-container {
-      position: relative;
-      -ms-flex: 1 1 100%;
-      flex: 1 1 100%;
-      border: none;
-      overflow: auto;
-    }
-
-    .sql-context-tab {
-      padding-top: 0 !important;
-      padding-bottom: 5px !important;
-      margin-bottom: -1px !important
-    }
-
-    .sql-context-flex {
-      display: -ms-flexbox;
-      display: flex;
-      -ms-flex-flow: column nowrap;
-      flex-flow: column nowrap;
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      width: 100%;
-    }
-
-    .sql-context-flex-header {
-      -ms-flex: 0 0 35px;
-      flex: 0 0 35px;
-    }
-
-    .sql-context-flex-fill {
-      overflow: hidden;
-      position: relative;
-      -ms-flex: 1 1 100%;
-      flex: 1 1 100%;
-    }
-
-    .sql-context-flex-bottom-links {
-      -ms-flex: 0 0 35px;
-      flex: 0 0 35px;
-      border-top: 1px solid #ebebeb;
-      z-index: 100;
-      background-color: #FFF;
-    }
-
-    .sql-context-link-row {
-      float: right;
-      margin: 8px 15px 0 10px;
-    }
-
-    .sql-context-link-row a {
-      margin-left: 10px;
-    }
-
-    .sql-context-inline-search {
-      border-radius: 8px !important;
-      min-height: 18px !important;
-      height: 18px !important;
-      margin: 0 5px 0 5px !important;
-      padding-right: 18px !important;
-    }
-
-    .sql-context-empty-columns {
-      letter-spacing: 0.035em;
-      margin-top: 50px;
-      font-size: 14px;
-      color: #737373;
-      text-align: center;
-    }
-
-    .context-sample th {
-      border-right: 1px solid #e5e5e5;
-    }
-
-    .context-sample td {
-      border-right: 1px solid #e5e5e5;
-      white-space: nowrap;
-    }
-
-    .context-sample .fixed-first-column {
-      margin-top: -1px;
-    }
-
-    .context-sample .fixed-header-row {
-      border-bottom: 1px solid #e5e5e5;
-    }
-
-    .context-sample .fixed-first-cell {
-      border-right: 1px solid #e5e5e5;
-      margin-top: -1px;
-      margin-left: -1px;
-    }
-  </style>
-
   <script type="text/html" id="sql-context-footer">
     <div class="sql-context-flex-bottom-links">
       <div class="sql-context-link-row">
         <a class="inactive-action pointer" data-bind="visible: showInAssistEnabled && (isTable || isColumn), click: function() { huePubSub.publish('sql.context.popover.show.in.assist') }"><i style="font-size: 11px;" title="${ _("Show in Assist...") }" class="fa fa-search"></i> ${ _("Assist") }</a>
-        <a class="inactive-action pointer" data-bind="visible: isTable, click: function() { huePubSub.publish('sql.context.popover.open.in.metastore') }"><i style="font-size: 11px;" title="${ _("Open in Metastore...") }" class="fa fa-external-link"></i> ${ _("Metastore") }</a>
+        <a class="inactive-action pointer" data-bind="visible: isTable || isDatabase, click: function() { huePubSub.publish('sql.context.popover.open.in.metastore', isTable ? 'table' : 'db') }"><i style="font-size: 11px;" title="${ _("Open in Metastore...") }" class="fa fa-external-link"></i> ${ _("Metastore") }</a>
         <a class="inactive-action pointer" data-bind="visible: isHdfs, click: function() { huePubSub.publish('sql.context.popover.replace.in.editor') }"><i style="font-size: 11px;" title="${ _("Replace the editor content...") }" class="fa fa-pencil"></i> ${ _("Insert in the editor") }</a>
         <a class="inactive-action pointer" data-bind="visible: isHdfs, click: function() { huePubSub.publish('sql.context.popover.open.in.file.browser') }"><i style="font-size: 11px;" title="${ _("Open in File Browser...") }" class="fa fa-external-link"></i> ${ _("File Browser") }</a>
         <!-- ko if: isAsterisk -->
@@ -198,9 +76,18 @@ from metadata.conf import has_navigator
       <div style="margin-left: 15px; font-style: italic;" data-bind="text: comment"></div>
       <!-- /ko -->
       %if has_navigator(user):
+        <!-- ko if: $parent.sourceType === 'hive' || $parent.sourceType === 'impala' -->
         <div style="margin: 10px; font-size: 15px; font-weight: 300;">${ _("Tags") }</div>
         <div style="margin-left: 15px;" data-bind="component: { name: 'nav-tags', params: $parent } "></div>
+        <!-- /ko -->
       %endif
+      <!-- ko if: typeof viewSql !== 'undefined' -->
+      <div style="margin: 10px; font-size: 15px; font-weight: 300;">${ _("View SQL") }</div>
+      <!-- ko hueSpinner: { spin: loadingViewSql, center: true, size: 'large' } --><!-- /ko -->
+      <!-- ko ifnot: loadingViewSql -->
+      <div style="margin: 0 10px;" class="pointer" title="${ _("Click to copy") }" data-bind="tooltip: { placement: 'bottom' }, clickToCopy: viewSql, click: function () { huePubSub.publish('sql.context.popover.hide'); }, highlight: { value: viewSql, formatted: true, dialect: $parent.sourceType }"></div>
+      <!-- /ko -->
+      <!-- /ko -->
     </div>
     <!-- /ko -->
   </script>
@@ -208,14 +95,16 @@ from metadata.conf import has_navigator
   <script type="text/html" id="sql-context-column-details">
     <div class="sql-context-flex-fill" data-bind="with: fetchedData, nicescroll">
       <div style="margin: 15px;">
-        <a class="pointer" data-bind="text: name, attr: { title: name }, click: function() { huePubSub.publish('sql.context.popover.scroll.to.column', name); }"></a> (<span data-bind="text: type.indexOf('<') !== -1 ? type.substring(0, type.indexOf('<')) : type, attr: { title: type }"></span>)
+        <a class="pointer" data-bind="text: name, attr: { title: name }, click: function() { huePubSub.publish('sql.context.popover.scroll.to.column', name); }"></a> <!-- ko if: typeof type !== 'undefined' -->(<span data-bind="text: type.indexOf('<') !== -1 ? type.substring(0, type.indexOf('<')) : type, attr: { title: type }"></span>)<!-- /ko -->
         <!-- ko if: typeof comment !== 'undefined' && comment !== '' && comment !== null -->
         <div style="margin-top: 10px; font-size: 15px; font-weight: 300;">${ _("Comment") }</div>
         <div data-bind="text: comment"></div>
         <!-- /ko -->
         %if has_navigator(user):
+          <!-- ko if: $parent.sourceType === 'hive' || $parent.sourceType === 'impala' -->
           <div style="margin-top: 10px; font-size: 15px; font-weight: 300;">${ _("Tags") }</div>
           <div style="margin: 10px" data-bind="component: { name: 'nav-tags', params: $parent } "></div>
+          <!-- /ko -->
         %endif
       </div>
     </div>
@@ -225,19 +114,19 @@ from metadata.conf import has_navigator
     <div class="sql-context-flex-fill" data-bind="with: fetchedData, nicescroll">
       <div style="margin: 15px;">
         <a class="pointer" data-bind="visible: typeof sample !== 'undefined', text: name || $parents[2].title, attr: { title: name || $parents[2].title }, click: function() { huePubSub.publish('sql.context.popover.scroll.to.column', name || $parents[2].title); }"></a>
-        <span data-bind="visible: typeof sample === 'undefined', text: name || $parents[2].title, attr: { title: name || $parents[2].title }"></span> (<span data-bind="text: type.indexOf('<') !== -1 ? type.substring(0, type.indexOf('<')) : type, attr: { title: type }"></span>)
+        <span data-bind="visible: typeof sample === 'undefined', text: name || $parents[2].title, attr: { title: name || $parents[2].title }"></span> <!-- ko if: typeof type !== 'undefined' -->(<span data-bind="text: type.indexOf('<') !== -1 ? type.substring(0, type.indexOf('<')) : type, attr: { title: type }"></span>)<!-- /ko -->
       </div>
     </div>
   </script>
 
   <script type="text/html" id="sql-context-table-and-column-sample">
-    <div class="sql-context-flex-fill" data-bind="with: fetchedData">
-      <div class="context-sample sample-scroll" style="text-align: left; padding: 3px; overflow: hidden; height: 100%">
+    <div class="sql-context-flex-fill context-sample-container" data-bind="with: fetchedData">
+      <div class="context-sample sample-scroll">
         <!-- ko if: rows.length == 0 -->
         <div class="alert">${ _('The selected table has no data.') }</div>
         <!-- /ko -->
         <!-- ko if: rows.length > 0 -->
-        <table id="samples-table" class="samples-table table table-striped table-condensed">
+        <table id="samples-table" class="samples-table table table-condensed">
           <thead>
           <tr>
             <th style="width: 10px">&nbsp;</th>
@@ -257,11 +146,11 @@ from metadata.conf import has_navigator
   <script type="text/html" id="sql-context-table-analysis">
     <div class="sql-context-flex-fill" data-bind="with: fetchedData, niceScroll">
       <!-- ko if: stats.length > 0 -->
-        <table class="table table-striped">
+        <table class="table table-condensed">
           <tbody data-bind="foreach: stats">
             <tr>
-              <th data-bind="text: data_type, style:{'border-top-color': $index() == 0 ? '#ffffff' : '#e5e5e5'}" style="background-color: #FFF"></th>
-              <td data-bind="text: $parents[1].formatAnalysisValue(data_type, comment), style:{'border-top-color': $index() == 0 ? '#ffffff' : '#e5e5e5'}" style="background-color: #FFF"></td>
+              <td><strong data-bind="text: data_type"></strong></td>
+              <td data-bind="text: $parents[1].formatAnalysisValue(data_type, comment)"></td>
             </tr>
           </tbody>
         </table>
@@ -274,8 +163,8 @@ from metadata.conf import has_navigator
       <table class="table table-condensed">
         <tbody data-bind="foreach: stats">
           <tr>
-            <th data-bind="text: Object.keys($data)[0], style:{'border-top-color': $index() == 0 ? '#ffffff' : '#e5e5e5'}" style="background-color: #FFF"></th>
-            <td data-bind="text: $data[Object.keys($data)[0]], style:{'border-top-color': $index() == 0 ? '#ffffff' : '#e5e5e5'}" style="background-color: #FFF"></td>
+            <td><strong data-bind="text: Object.keys($data)[0]"></strong></td>
+            <td data-bind="text: $data[Object.keys($data)[0]]"></td>
           </tr>
         </tbody>
       </table>
@@ -285,10 +174,12 @@ from metadata.conf import has_navigator
   <script type="text/html" id="sql-context-database-details">
     <div class="sql-context-flex-fill">
       <div class="sql-context-flex">
-        <div class="sql-context-flex-header">
-          <div style="margin: 10px 5px 0 10px;">
-            <span style="font-size: 15px; font-weight: 300;">${_('Tags')}</span>
-          </div>
+        <div data-bind="if: $parent.comment">
+          <div style="margin: 10px; font-size: 15px; font-weight: 300;">${ _("Comment") }</div>
+          <div style="margin-left: 15px; font-style: italic;" data-bind="text: $parent.comment"></div>
+        </div>
+        <div style="margin: 10px 5px 0 10px;">
+          <span style="font-size: 15px; font-weight: 300;">${_('Tags')}</span>
         </div>
         <div class="sql-context-flex-fill sql-columns-table" style="position:relative; height: 100%; overflow-y: auto;">
           <div style="margin: 10px" data-bind="component: { name: 'nav-tags', params: $data } "></div>
@@ -314,12 +205,19 @@ from metadata.conf import has_navigator
   </script>
 
   <script type="text/html" id="sql-context-function-details">
+    <!-- ko if: typeof details === 'undefined' -->
+    <div class="sql-context-flex-fill">
+      <div class="alert">${_('Could not find details for the function')} <span data-bind="text: $parents[2].title"></span>()</div>
+    </div>
+    <!-- /ko -->
+    <!-- ko if: typeof details !== 'undefined' -->
     <div class="sql-context-flex-fill" data-bind="with: details, niceScroll">
       <div style="padding: 8px">
         <p style="margin: 10px 10px 18px 10px;"><span style="white-space: pre; font-family: monospace;" data-bind="text: signature"></span></p>
         <p><span data-bind="text: description"></span></p>
       </div>
     </div>
+    <!-- /ko -->
   </script>
 
   <script type="text/html" id="sql-context-table-partitions">
@@ -328,7 +226,7 @@ from metadata.conf import has_navigator
         <span style="font-size: 15px; font-weight: 300;">${_('Columns')}</span>
       </div>
       <div>
-        <table class="table table-striped table-condensed table-nowrap">
+        <table class="table table-condensed table-nowrap">
           <thead>
           <tr>
             <th style="width: 1%">&nbsp;</th>
@@ -346,7 +244,7 @@ from metadata.conf import has_navigator
       <div style="margin: 10px 5px 0 10px;">
         <span style="font-size: 15px; font-weight: 300;">${_('Partitions')}</span>
       </div>
-      <table class="table table-striped table-condensed table-nowrap">
+      <table class="table table-condensed table-nowrap">
         <thead>
           <tr>
             <th style="width: 1%">&nbsp;</th>
@@ -372,10 +270,12 @@ from metadata.conf import has_navigator
   <script type="text/html" id="sql-context-popover-template">
     <div class="hue-popover" data-bind="css: orientationClass, style: { 'left': left() + 'px', 'top': top() + 'px', 'width': width() + 'px', height: height() + 'px' }, resizable: { containment: 'document', handles: resizeHelper.resizableHandles, start: resizeHelper.resizeStart, stop: resizeHelper.resizeStop, resize: resizeHelper.resize }">
       <div class="hue-popover-arrow" data-bind="style: { 'margin-left': leftAdjust() + 'px',  'margin-top': topAdjust() + 'px' }"></div>
-      <div class="hue-popover-title">
-        <i class="pull-left fa muted" data-bind="css: iconClass" style="margin-top: 3px"></i> <span data-bind="text: title"></span>
-        <a class="pull-right pointer inactive-action" data-bind="click: close"><i class="fa fa-fw fa-times"></i></a>
-        <a class="pull-right pointer inactive-action" data-bind="visible: pinEnabled, click: pin"><i class="fa fa-fw fa-thumb-tack"></i></a>
+      <div class="hue-popover-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 30px;">
+        <i class="fa muted" data-bind="css: iconClass" style="margin-top: 3px"></i> <span data-bind="text: title"></span>
+        <div style="position: absolute; right: 6px; top: 8px;">
+          <a class="pointer inactive-action" data-bind="visible: pinEnabled, click: pin"><i class="fa fa-fw fa-thumb-tack"></i></a>
+          <a class="pointer inactive-action" data-bind="click: close"><i class="fa fa-fw fa-times"></i></a>
+        </div>
       </div>
       <!-- ko template: 'sql-context-contents' --><!-- /ko -->
     </div>
@@ -384,7 +284,7 @@ from metadata.conf import has_navigator
   <script type="text/html" id="sql-context-contents">
     <div class="sql-context-popover-content">
       <!-- ko with: contents -->
-      <ul class="nav nav-pills sql-context-tabs" data-bind="foreach: tabs">
+      <ul class="nav nav-tabs sql-context-tabs" data-bind="foreach: tabs">
         <li data-bind="click: function () { $parent.activeTab(id); }, css: { 'active' : $parent.activeTab() === id }">
           <a class="sql-context-tab" data-toggle="tab" data-bind="text: label, attr: { href: '#' + id }"></a>
         </li>
@@ -396,7 +296,12 @@ from metadata.conf import has_navigator
             <div class="sql-context-flex-fill" data-bind="visible: loading"><!-- ko hueSpinner: { spin: loading, center: true, size: 'large' } --><!-- /ko --></div>
             <!-- ko if: ! loading() && hasErrors() -->
             <div class="sql-context-flex-fill">
-              <div class="alert" data-bind="text: $parent.errorText"></div>
+                <div class="alert">
+                <span data-bind="text: $parent.errorText"></span>
+                <!-- ko if: $parent.enableSampleError -->
+                <a href="javascript:void(0);" data-bind="click: function(){ huePubSub.publish('sample.error.insert.click', $data); huePubSub.publish('sql.context.popover.hide');}">${_('Insert ')}<span data-bind="text:$parent.title"></span> ${_(' sample query')}</a> ${_('at cursor')}
+                <!-- /ko -->
+                </div>
             </div>
             <!-- /ko -->
             <!-- ko if: ! loading() && ! hasErrors() -->
@@ -411,7 +316,7 @@ from metadata.conf import has_navigator
     </div>
   </script>
 
-  <script type="text/javascript" charset="utf-8">
+  <script type="text/javascript">
     (function () {
 
       var HALF_SIZE_LIMIT_X = 130;
@@ -483,6 +388,11 @@ from metadata.conf import has_navigator
           defaultDatabase: self.defaultDatabase,
           silenceErrors: true,
           successCallback: function (data) {
+            if (data.code === 500) {
+              self.loading(false);
+              self.hasErrors(true);
+              return;
+            }
             if (typeof data.extended_columns !== 'undefined') {
               data.extended_columns.forEach(function (column) {
                 column.extendedType = column.type.replace(/</g, '&lt;').replace(/>/g, '&lt;');
@@ -490,6 +400,25 @@ from metadata.conf import has_navigator
                   column.type = column.type.substring(0, column.type.indexOf('<'));
                 }
               });
+            }
+            if (typeof data.properties !== 'undefined') {
+              data.properties.forEach(function (property) {
+                if (property.col_name.toLowerCase() === 'view original text:') {
+                  data.viewSql = ko.observable();
+                  data.loadingViewSql = ko.observable(true);
+                  ApiHelper.getInstance().formatSql(property.data_type).done(function (formatResponse) {
+                    if (formatResponse.status == 0) {
+                      data.viewSql(formatResponse.formatted_statements);
+                    } else {
+                      data.viewSql(property.data_type);
+                    }
+                  }).fail(function () {
+                    data.viewSql(property.data_type);
+                  }).always(function () {
+                    data.loadingViewSql(false);
+                  })
+                }
+              })
             }
             self.fetchedData(data);
             self.loading(false);
@@ -503,6 +432,7 @@ from metadata.conf import has_navigator
           }
         });
       };
+
 
       function TableAndColumnContextTabs(data, sourceType, defaultDatabase, isColumn, isComplex) {
         var self = this;
@@ -605,7 +535,9 @@ from metadata.conf import has_navigator
             template: 'sql-context-table-and-column-sample',
             templateData: self.sample,
             errorText: '${ _("There was a problem loading the samples.") }',
-            isColumn: isColumn
+            isColumn: isColumn,
+            title: self.title,
+            enableSampleError: true
           });
         }
 
@@ -703,11 +635,6 @@ from metadata.conf import has_navigator
               sourceType: sourceType,
               path: path
             });
-            huePubSub.publish('sql.context.popover.hide')
-          }));
-
-          pubSubs.push(huePubSub.subscribe('sql.context.popover.open.in.metastore', function () {
-            window.open('/metastore/table/' + path.join('/'), '_blank');
           }));
         });
       }
@@ -765,6 +692,8 @@ from metadata.conf import has_navigator
             }
           });
 
+          hueUtils.initNiceScroll($t.parents('.dataTables_wrapper'));
+
           $t.parents('.dataTables_wrapper').niceScroll({
             cursorcolor: "#C1C1C1",
             cursorborder: "1px solid #C1C1C1",
@@ -773,7 +702,8 @@ from metadata.conf import has_navigator
             scrollspeed: 100,
             mousescrollstep: 60,
             cursorminheight: 20,
-            horizrailenabled: true
+            horizrailenabled: true,
+            autohidemode: "leave"
           });
 
           if (data && data.rows) {
@@ -792,10 +722,17 @@ from metadata.conf import has_navigator
 
       function DatabaseContextTabs(data, sourceType, defaultDatabase) {
         var self = this;
+        self.dbComment = ko.observable('');
+        var dbName = data.identifierChain[data.identifierChain.length - 1].name;
+        $.getJSON('/metastore/databases/' + dbName + '/metadata', function (data) {
+          if (data && data.status == 0 && data.data.comment) {
+              self.dbComment(data.data.comment);
+          }
+        });
         self.tabs = [
-          { id: 'tags', label: '${ _("Tags") }', template: 'sql-context-database-details', templateData: new GenericTabContents(data.identifierChain, sourceType, defaultDatabase, ApiHelper.getInstance().fetchAutocomplete) }
+          { id: 'details', label: '${ _("Details") }', comment : self.dbComment, template: 'sql-context-database-details', templateData: new GenericTabContents(data.identifierChain, sourceType, defaultDatabase, ApiHelper.getInstance().fetchAutocomplete) }
         ];
-        self.activeTab = ko.observable('tags');
+        self.activeTab = ko.observable('details');
       }
 
 
@@ -814,6 +751,15 @@ from metadata.conf import has_navigator
         self.expand = function () {
           var colsToExpand = self.selectedColumns().length === 0 ? self.columns : self.selectedColumns();
           var colIndex = {};
+          var colsTableMap = {};
+          self.columns.forEach(function (col) {
+            if (colsTableMap[col.name]) {
+              colsTableMap[col.name].push(col.table);
+            }
+            else {
+              colsTableMap[col.name] = [col.table];
+            }
+          });
           colsToExpand.forEach(function (col) {
             if (colIndex[col.name]) {
               colIndex[col.name]++;
@@ -822,7 +768,7 @@ from metadata.conf import has_navigator
             }
           });
           Object.keys(colIndex).forEach(function (name) {
-            if (colIndex[name] === 1) {
+            if (colIndex[name] === 1 && colsTableMap[name].length === 1) {
               delete colIndex[name];
             }
           });
@@ -1227,6 +1173,22 @@ from metadata.conf import has_navigator
         }
         self.orientationClass = 'hue-popover-' + orientation;
 
+        if ((self.isDatabase || self.isTable || self.isView) && self.data.identifierChain) {
+          apiHelper.identifierChainToPath({
+            sourceType: self.sourceType,
+            identifierChain: self.data.identifierChain
+          }, function (path) {
+            pubSubs.push(huePubSub.subscribe('sql.context.popover.open.in.metastore', function (type) {
+              if (IS_HUE_4) {
+                huePubSub.publish('open.link', '/metastore/table' + (type === 'table' ? '/' : 's/') + path.join('/'));
+                huePubSub.publish('sql.context.popover.hide');
+              } else {
+                window.open('/metastore/table' + (type === 'table' ? '/' : 's/') + path.join('/'), '_blank');
+              }
+            }));
+          });
+        }
+
         if (params.delayedHide) {
           var hideTimeout = -1;
           var onLeave = function () {
@@ -1255,6 +1217,18 @@ from metadata.conf import has_navigator
             $('.hue-popover').off('click', keepPopoverOpenOnClick);
           });
         }
+
+        var closeOnEsc = function (e) {
+          if (e.keyCode === 27) {
+            hidePopover();
+          }
+        };
+
+        $(document).on('keyup', closeOnEsc);
+
+        self.disposalFunctions.push(function () {
+          $(document).off('keyup', closeOnEsc);
+        });
 
         window.setTimeout(function() {
           $(document).on('click', hideOnClickOutside);
@@ -1311,9 +1285,10 @@ from metadata.conf import has_navigator
         </div>
       </div>
       <div class="sql-context-flex-fill sql-columns-table" style="position:relative; height: 100%; overflow-y: auto;">
-        <table style="width: 100%" class="table table-striped table-condensed table-nowrap">
+        <table id="sqlColumnsTable" style="width: 100%" class="table table-condensed table-nowrap">
+          <!-- ko if: filteredColumns().length !== 0 -->
           <thead>
-          <tr data-bind="visible: filteredColumns().length !== 0">
+          <tr>
             <th width="6%">&nbsp;</th>
             <!-- ko if: typeof filteredColumns()[0].table === 'undefined' -->
             <th width="60%">${_('Name')}</th>
@@ -1326,6 +1301,7 @@ from metadata.conf import has_navigator
             <th width="6%">&nbsp;</th>
           </tr>
           </thead>
+          <!-- /ko -->
           <tbody data-bind="foreachVisible: { data: filteredColumns, minHeight: 29, container: '.sql-columns-table', pubSubDispose: 'sql.context.popover.dispose' }">
           <tr>
             <!-- ko if: typeof selected === 'undefined' -->
@@ -1333,7 +1309,7 @@ from metadata.conf import has_navigator
             <!-- /ko -->
             <!-- ko if: typeof selected !== 'undefined' -->
             <td data-bind="toggle: selected" class="center" style="cursor: default;">
-              <div class="hueCheckbox fa" data-bind="css: {'fa-check': selected }"></div>
+              <div class="hueCheckbox fa" data-bind="multiCheck: '#sqlColumnsTable', css: {'fa-check': selected }"></div>
             </td>
 
             <!-- /ko -->
@@ -1358,7 +1334,7 @@ from metadata.conf import has_navigator
     </div>
   </script>
 
-  <script type="text/javascript" charset="utf-8">
+  <script type="text/javascript">
     (function () {
 
       function SqlColumnsTable(params) {

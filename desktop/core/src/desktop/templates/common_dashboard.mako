@@ -26,12 +26,12 @@
 %>
 
 <%def name="import_layout(with_deferred=False)">
-  <link rel="stylesheet" href="${ static('desktop/css/common_dashboard.css') }">
+  <link rel="stylesheet" href="${ static('dashboard/css/common_dashboard.css') }">
   <script src="${ static('desktop/js/ko.common-dashboard.js') }" type="text/javascript" charset="utf-8"></script>
   <script src="${ static('desktop/ext/js/jquery/plugins/jquery-ui-1.10.4.custom.min.js') }" type="text/javascript" charset="utf-8"></script>
   <script src="${ static('desktop/ext/js/knockout-sortable.min.js') }" type="text/javascript" charset="utf-8"></script>
   %if with_deferred:
-  <script type="text/javascript" charset="utf-8">
+  <script type="text/javascript">
     ko.options.deferUpdates = true;
   </script>
   %endif
@@ -39,7 +39,7 @@
 
 <%def name="layout_toolbar()">
 
-<div class="card card-toolbar" data-bind="slideVisible: isEditing">
+<div class="card card-toolbar" data-bind="visible: isEditing">
   %if not hasattr(caller, "skipLayout"):
   <div style="float: left">
     <div class="toolbar-label">${_('LAYOUT')}</div>
@@ -54,7 +54,7 @@
         <div class="layout-box" style="width: 100px;"></div>
       </div>
     </a>
-    <a data-bind="visible: columns().length == 0" href="javascript: magicLayout(viewModel)" onmouseover="viewModel.previewColumns('magic')" onmouseout="viewModel.previewColumns('')">
+    <a data-bind="visible: columns().length == 0" href="javascript: magicSearchLayout(viewModel)" onmouseover="viewModel.previewColumns('magic')" onmouseout="viewModel.previewColumns('')">
       <div class="layout-container">
         <div class="layout-box" style="width: 100px;"><i class="fa fa-table"></i></div>
       </div>
@@ -68,7 +68,7 @@
   </div>
   %endif
   %if hasattr(caller, "widgets"):
-  <div style="float: left; margin-left: 20px" data-bind="visible: columns().length > 0">
+  <div class="card-toolbar-content" style="float: left; margin-left: 20px" data-bind="visible: columns().length > 0">
     %if hasattr(caller, "widgetSectionName"):
       <div class="toolbar-label">${caller.widgetSectionName()}</div>
     %else:
@@ -85,12 +85,12 @@
 <%def name="layout_skeleton()">
   <div id="emptyDashboard" data-bind="fadeVisible: !isEditing() && columns().length == 0">
   <div style="float:left; padding-top: 90px; margin-right: 20px; text-align: center; width: 260px">${ _('Click on the pencil to get started with your dashboard!') }</div>
-    <img src="${ static('desktop/art/hint_arrow.png') }" />
+    <img src="${ static('desktop/art/hint_arrow.png') }" alt="${ _('Hint arrow') }" />
   </div>
 
   <div id="emptyDashboardEditing" data-bind="fadeVisible: isEditing() && columns().length == 0 && previewColumns() == ''">
     <div style="float:right; padding-top: 90px; margin-left: 20px; text-align: center; width: 260px">${ _('Pick an index and Click on a layout to start your dashboard!') }</div>
-    <img src="${ static('desktop/art/hint_arrow_horiz_flipped.png') }" />
+    <img src="${ static('desktop/art/hint_arrow_horiz_flipped.png') }" alt="${ _('Hint arrow') }" />
   </div>
 
 
@@ -158,7 +158,7 @@
 
 <script type="text/html" id="row-template">
   <div class="emptyRow" data-bind="visible: widgets().length == 0 && $index() == 0 && $root.isEditing() && $parent.size() > 4 && $parent.rows().length == 1">
-    <img src="${ static('desktop/art/hint_arrow_flipped.png') }" style="float:left; margin-right: 10px"/>
+    <img src="${ static('desktop/art/hint_arrow_flipped.png') }" style="float:left; margin-right: 10px" alt="${ _('Hint arrow') }"/>
     <div style="float:left; text-align: center; width: 260px">${_('Drag any of the widgets inside your empty row')}</div>
     <div class="clearfix"></div>
   </div>
@@ -264,7 +264,6 @@
   <script src="${ static('desktop/ext/js/leaflet/leaflet.markercluster.js') }" type="text/javascript" charset="utf-8"></script>
   <script src="${ static('desktop/ext/js/leaflet/leaflet.zoombox.js') }" type="text/javascript" charset="utf-8"></script>
 
-  <script src="${ static('desktop/ext/js/d3.v3.js') }" type="text/javascript" charset="utf-8"></script>
   <script src="${ static('desktop/js/nv.d3.js') }" type="text/javascript" charset="utf-8"></script>
   <script src="${ static('desktop/ext/js/topojson.v1.min.js') }" type="text/javascript" charset="utf-8"></script>
   <script src="${ static('desktop/ext/js/topo/world.topo.js') }" type="text/javascript" charset="utf-8"></script>

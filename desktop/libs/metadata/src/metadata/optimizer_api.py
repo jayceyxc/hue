@@ -21,17 +21,16 @@ import logging
 import struct
 
 from django.http import Http404
-from django.utils.translation import ugettext as _
 from django.views.decorators.http import require_POST
 
 from desktop.lib.django_util import JsonResponse
 from desktop.lib.i18n import force_unicode
 from desktop.models import Document2
-from libsentry.privilege_checker import PrivilegeChecker
+from libsentry.privilege_checker import MissingSentryPrivilegeException
+from notebook.api import _get_statement
 from notebook.models import Notebook
 
-from metadata.conf import NAVIGATOR
-from metadata.optimizer_client import OptimizerApi
+from metadata.optimizer_client import OptimizerApi, NavOptException, _get_table_name
 
 
 LOG = logging.getLogger(__name__)
@@ -39,6 +38,8 @@ LOG = logging.getLogger(__name__)
 
 try:
   from beeswax.api import get_table_stats
+  from beeswax.design import hql_query
+  from beeswax.server import dbms
 except ImportError, e:
   LOG.warn("Hive lib not enabled")
 
@@ -49,6 +50,18 @@ def error_handler(view_fn):
       return view_fn(*args, **kwargs)
     except Http404, e:
       raise e
+    except NavOptException, e:
+      LOG.exception(e)
+      response = {
+        'status': -1,
+        'message': e.message
+      }
+    except MissingSentryPrivilegeException, e:
+      LOG.exception(e)
+      response = {
+        'status': -1,
+        'message': 'Missing privileges for %s' % force_unicode(str(e))
+      }
     except Exception, e:
       LOG.exception(e)
       response = {
@@ -66,7 +79,7 @@ def get_tenant(request):
 
   email = request.POST.get('email')
 
-  api = OptimizerApi()
+  api = OptimizerApi(request.user)
   data = api.get_tenant(email=email)
 
   if data:
@@ -84,10 +97,10 @@ def top_tables(request):
   response = {'status': -1}
 
   database = request.POST.get('database', 'default')
-  len = request.POST.get('len', 1000)
+  limit = request.POST.get('len', 1000)
 
-  api = OptimizerApi()
-  data = api.top_tables(database_name=database)
+  api = OptimizerApi(user=request.user)
+  data = api.top_tables(database_name=database, page_size=limit)
 
   tables = [{
       'eid': table['eid'],
@@ -98,17 +111,8 @@ def top_tables(request):
       'patternCount': table['patternCount'],
       'total': table['total'],
       'is_fact': table['type'] != 'Dimension'
-      } for table in data['results']
+    } for table in data['results']
   ]
-
-  if NAVIGATOR.APPLY_SENTRY_PERMISSIONS.get():
-    checker = PrivilegeChecker(user=request.user)
-    action = 'SELECT'
-
-    for table in tables:
-      paths = _get_table_name(table['name'])
-      table.update({u'db': paths['database'], u'table': paths['table'], u'column': None, u'server': u'server1'})
-    tables = checker.filter_objects(tables, action) #, getkey=getkey)
 
   response['top_tables'] = tables
   response['status'] = 0
@@ -124,7 +128,7 @@ def table_details(request):
   database_name = request.POST.get('databaseName')
   table_name = request.POST.get('tableName')
 
-  api = OptimizerApi()
+  api = OptimizerApi(request.user)
 
   data = api.table_details(database_name=database_name, table_name=table_name)
 
@@ -146,7 +150,7 @@ def query_compatibility(request):
   target_platform = request.POST.get('targetPlatform')
   query = request.POST.get('query')
 
-  api = OptimizerApi()
+  api = OptimizerApi(request.user)
 
   data = api.query_compatibility(source_platform=source_platform, target_platform=target_platform, query=query)
 
@@ -165,10 +169,12 @@ def query_risk(request):
   response = {'status': -1}
 
   query = json.loads(request.POST.get('query'))
+  source_platform = request.POST.get('sourcePlatform')
+  db_name = request.POST.get('dbName')
 
-  api = OptimizerApi()
+  api = OptimizerApi(request.user)
 
-  data = api.query_risk(query=query)
+  data = api.query_risk(query=query, source_platform=source_platform, db_name=db_name)
 
   if data:
     response['status'] = 0
@@ -187,7 +193,7 @@ def similar_queries(request):
   source_platform = request.POST.get('sourcePlatform')
   query = json.loads(request.POST.get('query'))
 
-  api = OptimizerApi()
+  api = OptimizerApi(request.user)
 
   data = api.similar_queries(source_platform=source_platform, query=query)
 
@@ -206,9 +212,9 @@ def top_filters(request):
   response = {'status': -1}
 
   db_tables = json.loads(request.POST.get('dbTables'), '[]')
-  column_name = request.POST.get('columnName') # Unsused
+  column_name = request.POST.get('columnName') # Unused
 
-  api = OptimizerApi()
+  api = OptimizerApi(request.user)
   data = api.top_filters(db_tables=db_tables)
 
   if data:
@@ -227,7 +233,7 @@ def top_joins(request):
 
   db_tables = json.loads(request.POST.get('dbTables'), '[]')
 
-  api = OptimizerApi()
+  api = OptimizerApi(request.user)
   data = api.top_joins(db_tables=db_tables)
 
   if data:
@@ -246,7 +252,7 @@ def top_aggs(request):
 
   db_tables = json.loads(request.POST.get('dbTables'), '[]')
 
-  api = OptimizerApi()
+  api = OptimizerApi(request.user)
   data = api.top_aggs(db_tables=db_tables)
 
   if data:
@@ -263,7 +269,7 @@ def top_aggs(request):
 def top_databases(request):
   response = {'status': -1}
 
-  api = OptimizerApi()
+  api = OptimizerApi(request.user)
   data = api.top_databases()
 
   if data:
@@ -282,7 +288,7 @@ def top_columns(request):
 
   db_tables = json.loads(request.POST.get('dbTables'), '[]')
 
-  api = OptimizerApi()
+  api = OptimizerApi(request.user)
   data = api.top_columns(db_tables=db_tables)
 
   if data:
@@ -292,6 +298,21 @@ def top_columns(request):
     response['message'] = 'Optimizer: %s' % data
 
   return JsonResponse(response)
+
+
+def _convert_queries(queries_data):
+  queries = []
+
+  for query_data in queries_data:
+    try:
+      original_query_id = '%s:%s' % struct.unpack(b"QQ", base64.decodestring(query_data['snippets'][0]['result']['handle']['guid']))
+      execution_time = query_data['snippets'][0]['result']['executionTime'] * 100
+      statement = ' '.join([line for line in _get_statement(query_data).strip().splitlines() if not line.strip().startswith('--')])
+      queries.append((original_query_id, execution_time, statement, query_data['snippets'][0].get('database', 'default').strip()))
+    except Exception, e:
+      LOG.warning('Skipping upload of %s: %s' % (query_data['uuid'], e))
+
+  return queries
 
 
 @require_POST
@@ -306,19 +327,9 @@ def upload_history(request):
   if n:
     history = history[:n]
 
-  queries = []
-  for doc in history:
-    query_data = Notebook(document=doc).get_data()
+  queries = _convert_queries([Notebook(document=doc).get_data() for doc in history])
 
-    try:
-      original_query_id = '%s:%s' % struct.unpack(b"QQ", base64.decodestring(query_data['snippets'][0]['result']['handle']['guid']))
-      execution_time = query_data['snippets'][0]['result']['executionTime'] * 100
-
-      queries.append((original_query_id, execution_time, query_data['snippets'][0]['statement']))
-    except Exception, e:
-      LOG.warning('Skipping upload of %s: %s' % (doc, e))
-
-  api = OptimizerApi()
+  api = OptimizerApi(request.user)
 
   response['upload_history'] = api.upload(data=queries, data_type='queries', source_platform=source_platform)
   response['status'] = 0
@@ -331,44 +342,74 @@ def upload_history(request):
 def upload_table_stats(request):
   response = {'status': -1}
 
-  db_tables = json.loads(request.POST.get('dbTables'), '[]')
+  db_tables = json.loads(request.POST.get('db_tables'), '[]')
   source_platform = request.POST.get('sourcePlatform', 'hive')
   with_columns = json.loads(request.POST.get('with_columns', 'false'))
+  with_ddl = json.loads(request.POST.get('with_ddl', 'false'))
 
   table_stats = []
   column_stats = []
+  table_ddls = []
 
   for db_table in db_tables:
     path = _get_table_name(db_table)
 
     try:
+      if with_ddl:
+        db = dbms.get(request.user)
+        query = hql_query('SHOW CREATE TABLE `%(database)s`.`%(table)s`' % path)
+        handle = db.execute_and_wait(query, timeout_sec=5.0)
+
+        if handle:
+          result = db.fetch(handle, rows=5000)
+          db.close(handle)
+          table_ddls.append((0, 0, ' '.join([row[0] for row in result.rows()]), path['database']))
+
       full_table_stats = json.loads(get_table_stats(request, database=path['database'], table=path['table']).content)
       stats = dict((stat['data_type'], stat['comment']) for stat in full_table_stats['stats'])
 
-      table_stats.append((db_table, stats.get('numRows', -1)))
+      table_stats.append({
+        'table_name': path['table'],
+        'num_rows':  stats.get('numRows', -1),
+        'last_modified_time':  stats.get('transient_lastDdlTime', -1),
+        'total_size':  stats.get('totalSize', -1),
+        'raw_data_size':  stats.get('rawDataSize', -1),
+        'num_files':  stats.get('numFiles', -1),
+        # bytes_cached
+        # cache_replication
+        # format
+      })
 
       if with_columns:
         for col in full_table_stats['columns']:
           col_stats = json.loads(get_table_stats(request, database=path['database'], table=path['table'], column=col).content)['stats']
           col_stats = dict([(key, val) for col_stat in col_stats for key, val in col_stat.iteritems()])
 
-          column_stats.append(
-              (db_table, col, col_stats['data_type'],
-               int(col_stats.get('distinct_count')) if col_stats.get('distinct_count') != '' else -1,
-               int(col_stats['num_nulls']) if col_stats['num_nulls'] != '' else -1,
-               int(float(col_stats['avg_col_len'])) if col_stats['avg_col_len'] != '' else -1
-            )
-          )
+          column_stats.append({
+            'table_name': path['table'],
+            'column_name': col,
+            'data_type': col_stats['data_type'],
+            "num_distinct": int(col_stats.get('distinct_count')) if col_stats.get('distinct_count') != '' else -1,
+            "num_nulls": int(col_stats['num_nulls']) if col_stats['num_nulls'] != '' else -1,
+            "avg_col_len": int(float(col_stats['avg_col_len'])) if col_stats['avg_col_len'] != '' else -1,
+            "max_size": int(float(col_stats['max_col_len'])) if col_stats['max_col_len'] != '' else -1,
+            "min": col_stats['min'] if col_stats.get('min', '') != '' else -1,
+            "max": col_stats['max'] if col_stats.get('max', '') != '' else -1,
+            "num_trues": col_stats['num_trues'] if col_stats.get('num_trues', '') != '' else -1,
+            "num_falses": col_stats['num_falses'] if col_stats.get('num_falses', '') != '' else -1,
+          })
     except Exception, e:
       LOG.exception('Skipping upload of %s: %s' % (db_table, e))
 
-  api = OptimizerApi()
+  api = OptimizerApi(request.user)
 
   response['upload_table_stats'] = api.upload(data=table_stats, data_type='table_stats', source_platform=source_platform)
-  if with_columns:
+  response['status'] = 0 if response['upload_table_stats']['status']['state'] in ('WAITING', 'FINISHED', 'IN_PROGRESS') else -1
+  if column_stats:
     response['upload_cols_stats'] = api.upload(data=column_stats, data_type='cols_stats', source_platform=source_platform)
-
-  response['status'] = 0
+    response['status'] = response['status'] if response['upload_cols_stats']['status']['state'] in ('WAITING', 'FINISHED', 'IN_PROGRESS') else -1
+  if table_ddls:
+    response['upload_table_ddl'] = api.upload(data=table_ddls, data_type='queries', source_platform=source_platform)
 
   return JsonResponse(response)
 
@@ -380,18 +421,9 @@ def upload_status(request):
 
   workload_id = request.POST.get('workloadId')
 
-  api = OptimizerApi()
+  api = OptimizerApi(request.user)
 
   response['upload_status'] = api.upload_status(workload_id=workload_id)
   response['status'] = 0
 
   return JsonResponse(response)
-
-
-def _get_table_name(path):
-  if '.' in path:
-    database, table = path.split('.', 1)
-  else:
-    database, table = '', path
-
-  return {'database': database, 'table': table}
